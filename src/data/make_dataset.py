@@ -1,10 +1,6 @@
 # -*- coding: utf-8 -*-
-import logging
-import os
-
-import torch
-from torchvision import datasets, transforms
 from pl_bolts.datamodules import CIFAR10DataModule
+
 
 def main(input_filepath):
     """ Runs data processing scripts to turn raw data from (../raw) into
@@ -12,8 +8,8 @@ def main(input_filepath):
     """
     cifar10 = CIFAR10DataModule(input_filepath)
     cifar10.prepare_data()
-    print(next(cifar10.train_dataloader()))
+    cifar10.setup()
+
 
 if __name__ == "__main__":
     main("cifar10")
-    
