@@ -4,14 +4,14 @@ from pytorch_lightning.loggers import TensorBoardLogger
 
 from src import data as d
 from src import models as m
+from src.data.get_dataset import get_dataset
 
 
 def train_model():
     model_name = "conv_net"
 
     model = m.ConvNet(lr=0.01)
-    data =
-    data.setup()
+    data = get_dataset()
 
     trainer = pl.Trainer(
         gpus=0,

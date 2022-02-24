@@ -1,26 +1,21 @@
 import logging
-
 ######################################################################################################################
 ### This script is modified from the guide on pytorch distributed training https://github.com/seba-1511/dist_tuto.pth/
 ### https://pytorch.org/tutorials/intermediate/dist_tuto.html
 ######################################################################################################################
 import os
-from math import ceil
-from random import Random
 
 import torch
 import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.multiprocessing import Process
-from torch.nn.parallel import DistributedDataParallel as DDP
-from torchvision import datasets, transforms
-from pl_bolts.datamodules import CIFAR10DataModule, MNISTDataModule
-
 from pytorch_metric_learning import losses, miners, testers
 from pytorch_metric_learning.utils import distributed as pml_dist
 from pytorch_metric_learning.utils.accuracy_calculator import AccuracyCalculator
+from torch.nn.parallel import DistributedDataParallel as DDP
+
+from src.data.get_dataset import get_dataset
 
 logging.getLogger().setLevel(logging.INFO)
 
@@ -55,8 +50,8 @@ def get_all_embeddings(dataset, model, data_device):
 
 ### compute accuracy using AccuracyCalculator from pytorch-metric-learning ###
 def test(train_set, test_set, model, accuracy_calculator, data_device):
-    train_embeddings, train_labels = get_all_embeddings(train_set, model, data_device)
-    test_embeddings, test_labels = get_all_embeddings(test_set, model, data_device)
+    train_embeddings, train_labels = get_all_embeddings(train_set.dataset, model, data_device)
+    test_embeddings, test_labels = get_all_embeddings(test_set.dataset, model, data_device)
     train_labels = train_labels.squeeze(1)
     test_labels = test_labels.squeeze(1)
     print("Computing accuracy")
@@ -70,26 +65,23 @@ def test(train_set, test_set, model, accuracy_calculator, data_device):
     )
 
 
-def test_model(rank, train_set, test_set, model, epoch, data_device):
-    if rank == 0:
-        print("Computing validation set accuracy for epoch {}".format(epoch))
-        accuracy_calculator = AccuracyCalculator(include=("precision_at_1",), k=1)
-        test(train_set, test_set, model, accuracy_calculator, data_device)
-    dist.barrier()
+def test_model(train_set, test_set, model, epoch, data_device):
+    print("Computing validation set accuracy for epoch {}".format(epoch))
+    accuracy_calculator = AccuracyCalculator(include=("precision_at_1",), k=1)
+    test(train_set, test_set, model, accuracy_calculator, data_device)
 
 
-def run(rank, size, train_loader, val_loader):
+def run(train_loader, val_loader):
     """Distributed Synchronous SGD Example"""
-    print("Rank {} entering the 'run' function".format(rank))
+    # print("Rank {} entering the 'run' function".format(rank))
     torch.manual_seed(1234)
-    dist.barrier()
     ### use this if you have multiple GPUs ###
     # device = torch.device("cuda:{}".format(rank))
     batch_size = 32
     device = torch.device("cpu")
     model = Net()
     ### if you have multiple GPUs, set this to DDP(model.to(device), device_ids=[rank])
-    model = DDP(model.to(device))
+    model = model.to(device)
     # test_model(rank, train_dataset, val_dataset, model, "untrained", device)
 
     optimizer = optim.Adam(model.parameters(), lr=0.01)
@@ -97,9 +89,9 @@ def run(rank, size, train_loader, val_loader):
     #####################################
     ### pytorch-metric-learning stuff ###
     loss_fn = losses.TripletMarginLoss()
-    loss_fn = pml_dist.DistributedLossWrapper(loss=loss_fn, efficient=True)
+    # loss_fn = pml_dist.DistributedLossWrapper(loss=loss_fn, efficient=True)
     miner = miners.MultiSimilarityMiner()
-    miner = pml_dist.DistributedMinerWrapper(miner=miner, efficient=True)
+    # miner = pml_dist.DistributedMinerWrapper(miner=miner, efficient=True)
     ### pytorch-metric-learning stuff ###
     #####################################
 
@@ -107,7 +99,7 @@ def run(rank, size, train_loader, val_loader):
     num_batches = len(train_loader.dataset) // batch_size
     for epoch in range(1):
         epoch_loss = 0.0
-        print("Rank {} starting epoch {}".format(rank, epoch))
+        print("Starting epoch {}".format(epoch))
         for i, (data, target) in enumerate(train_loader):
             data, target = data.to(device), target.to(device)
             optimizer.zero_grad()
@@ -120,22 +112,21 @@ def run(rank, size, train_loader, val_loader):
             optimizer.step()
             if i % 10 == 0:
                 print(
-                    "Rank {}, iteration {}, loss {}, num pos pairs {}, num neg pairs {}".format(
-                        rank,
+                    "Iteration {}, loss {}, num pos pairs {}, num neg pairs {}".format(
                         i,
                         loss.item(),
-                        miner.miner.num_pos_pairs,
-                        miner.miner.num_neg_pairs,
+                        miner.num_pos_pairs,
+                        miner.num_neg_pairs,
                     )
                 )
-            dist.barrier()
+            # dist.barrier()
 
         print(
-            "Rank {}, epoch {}, average loss {}".format(
-                rank, epoch, epoch_loss / num_batches
+            "Epoch {}, average loss {}".format(
+                epoch, epoch_loss / num_batches
             )
         )
-        test_model(rank, train_loader, val_loader, model, epoch, device)
+        test_model(train_loader, val_loader, model, epoch, device)
 
 
 #######################################
@@ -152,17 +143,18 @@ def init_processes(rank, size, fn, train_dataset, val_dataset, backend="gloo"):
 if __name__ == "__main__":
     batch_size = 32
     # data = MNISTDataModule("./data", batch_size=batch_size)
-    data = CIFAR10DataModule("./data", batch_size=batch_size)
-    data.setup()
+    data = get_dataset()
+    run(data.train_dataloader(), data.val_dataloader())
 
-    size = 4
-    processes = []
-    for rank in range(size):
-        p = Process(
-            target=init_processes, args=(rank, size, run, data.train_dataloader(), data.val_dataloader())
-        )
-        p.start()
-        processes.append(p)
-
-    for p in processes:
-        p.join()
+    #
+    # size = 4
+    # processes = []
+    # for rank in range(size):
+    #     p = Process(
+    #         target=init_processes, args=(rank, size, run, data.train_dataloader(), data.val_dataloader())
+    #     )
+    #     p.start()
+    #     processes.append(p)
+    #
+    # for p in processes:
+    #     p.join()
