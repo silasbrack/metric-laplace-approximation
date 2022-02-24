@@ -1,15 +1,20 @@
 # -*- coding: utf-8 -*-
 from pl_bolts.datamodules import CIFAR10DataModule
+import argparse
 
 
-def main(input_filepath):
+def main(output_path='cifar10'):
     """ Runs data processing scripts to turn raw data from (../raw) into
         cleaned data ready to be analyzed (saved in ../processed).
     """
-    cifar10 = CIFAR10DataModule(input_filepath)
+    cifar10 = CIFAR10DataModule(output_path)
     cifar10.prepare_data()
-    cifar10.setup()
 
 
 if __name__ == "__main__":
-    main("cifar10")
+    parser = argparse.ArgumentParser(description='Process some integers.')
+    parser.add_argument('--output_path', type=str, help='File path from current working directory to install the cifar10 dataset')
+
+    args = parser.parse_args()
+
+    main(args.output_path)
