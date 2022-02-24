@@ -82,22 +82,20 @@ def run(train_loader, val_loader):
     model = Net()
     ### if you have multiple GPUs, set this to DDP(model.to(device), device_ids=[rank])
     model = model.to(device)
-    # test_model(rank, train_dataset, val_dataset, model, "untrained", device)
+    test_model(train_loader, val_loader, model, 'untrained', device)
 
     optimizer = optim.Adam(model.parameters(), lr=0.01)
 
     #####################################
     ### pytorch-metric-learning stuff ###
     loss_fn = losses.TripletMarginLoss()
-    # loss_fn = pml_dist.DistributedLossWrapper(loss=loss_fn, efficient=True)
     miner = miners.MultiSimilarityMiner()
-    # miner = pml_dist.DistributedMinerWrapper(miner=miner, efficient=True)
     ### pytorch-metric-learning stuff ###
     #####################################
 
     # num_batches = ceil(len(train_set.dataset) / float(bsz))
     num_batches = len(train_loader.dataset) // batch_size
-    for epoch in range(1):
+    for epoch in range(10):
         epoch_loss = 0.0
         print("Starting epoch {}".format(epoch))
         for i, (data, target) in enumerate(train_loader):
@@ -119,7 +117,6 @@ def run(train_loader, val_loader):
                         miner.num_neg_pairs,
                     )
                 )
-            # dist.barrier()
 
         print(
             "Epoch {}, average loss {}".format(
