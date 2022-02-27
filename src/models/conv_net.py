@@ -1,9 +1,10 @@
+import pytorch_lightning as pl
 import torch
+from pytorch_metric_learning import distances, losses, miners, reducers
 from pytorch_metric_learning.utils.accuracy_calculator import AccuracyCalculator
 from torch import nn
-from torch.nn import functional as F
-import pytorch_lightning as pl
-from pytorch_metric_learning import distances, losses, miners, reducers, testers
+
+from src.models.train_helper import test_model
 
 
 class ConvNet(pl.LightningModule):
@@ -43,7 +44,7 @@ class ConvNet(pl.LightningModule):
         indices_tuple = self.mining_func(embeddings, labels)
         loss = self.loss(embeddings, labels, indices_tuple)
 
-        self.log("train_loss", loss, prog_bar=True)
+        self.log("train_loss", loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -65,3 +66,11 @@ class ConvNet(pl.LightningModule):
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
         return optimizer
+
+    # TODO: fix this I guess
+    # def on_validation_end(self) -> None:
+    #     self.log("val_acc",
+    #              test_model(self.trainer.train_dataloader.dataset,
+    #                         self.trainer.val_dataloaders[0].dataset,
+    #                         self,
+    #                         self.device)["precision_at_1"])

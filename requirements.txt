@@ -87,3 +87,4 @@ Werkzeug==2.0.3
 yarl==1.7.2
 zipp==3.7.0
 lightning-bolts
+faiss-cpu

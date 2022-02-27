@@ -1,24 +1,23 @@
 import pytorch_lightning as pl
 from pytorch_lightning import callbacks
 from pytorch_lightning.loggers import TensorBoardLogger
-from pytorch_metric_learning import testers
-from pytorch_metric_learning.utils.accuracy_calculator import AccuracyCalculator
+from pl_bolts.datamodules import CIFAR10DataModule
 
-from src import data as d
 from src import models as m
-from src.data.get_dataset import get_dataset
+from src.models.train_helper import test_model
 
 
 def train_model():
     model_name = "conv_net"
 
     model = m.ConvNet(lr=0.01)
-    data = get_dataset()
+    data = CIFAR10DataModule("./data", batch_size=32, num_workers=4, normalize=True)
+    data.setup()
 
     trainer = pl.Trainer(
         gpus=0,
         max_epochs=1,
-        log_every_n_steps=10,
+        num_sanity_val_steps=0,
         logger=TensorBoardLogger(save_dir="logs/", name=model_name),
         callbacks=[
             callbacks.EarlyStopping(
@@ -45,26 +44,9 @@ def train_model():
 
     trainer.test(dataloaders=data.test_dataloader(), ckpt_path="best")
 
-    def get_all_embeddings(dataset, model, data_device):
-        # dataloader_num_workers has to be 0 to avoid pid error
-        # This only happens when within multiprocessing
-        tester = testers.BaseTester(dataloader_num_workers=0, data_device=data_device)
-        return tester.get_all_embeddings(dataset, model)
-
-    def test(train_set, test_set, model, accuracy_calculator, data_device):
-        train_embeddings, train_labels = get_all_embeddings(train_set.dataset, model, data_device)
-        test_embeddings, test_labels = get_all_embeddings(test_set.dataset, model, data_device)
-        train_labels = train_labels.squeeze(1)
-        test_labels = test_labels.squeeze(1)
-        accuracies = accuracy_calculator.get_accuracy(
-            test_embeddings, train_embeddings, test_labels, train_labels, False
-        )
-        return accuracies
-
-    accuracy_calculator = AccuracyCalculator(include=("precision_at_1",), k=1)
-    accuracies_train = test(data.train_dataloader(), data.train_dataloader(), model, accuracy_calculator, 'cpu')
-    accuracies_val = test(data.train_dataloader(), data.val_dataloader(), model, accuracy_calculator, 'cpu')
-    accuracies_test = test(data.train_dataloader(), data.test_dataloader(), model, accuracy_calculator, 'cpu')
+    accuracies_train = test_model(data.dataset_train, data.dataset_train, model, "cpu")
+    accuracies_val = test_model(data.dataset_train, data.dataset_val, model, "cpu")
+    accuracies_test = test_model(data.dataset_train, data.dataset_test, model, "cpu")
 
     print(f"Train accuracy: {accuracies_train['precision_at_1']}")
     print(f"Val accuracy: {accuracies_val['precision_at_1']}")
