@@ -16,6 +16,7 @@ from tqdm import tqdm
 from src.models import ConvNet
 from src.models.utils import test_model
 
+plt.switch_backend('agg')
 logging.getLogger().setLevel(logging.INFO)
 torch.manual_seed(1234)
 
@@ -25,32 +26,50 @@ def run(epochs=10, lr=0.01, batch_size=64):
     loss_fn = losses.TripletMarginLoss()
     miner = miners.MultiSimilarityMiner()
 
-    lite = Lite(gpus=1)
-    lite.run(model,
-             loss_fn,
-             miner,
-             epochs,
-             lr,
-             batch_size)
+    lite = Lite(gpus=1 if torch.cuda.is_available() else 0)
+
+    lite.run(name='metric-triplet',
+             model=model,
+             loss_fn=loss_fn,
+             miner=miner,
+             epochs=epochs,
+             lr=lr,
+             batch_size=batch_size,
+             freq=2,
+             load_dir=None
+             )
 
     lite.test()
 
 
-def setup_logger():
-    subdir = datetime.datetime.now().strftime('%Y-%m-%dT%H%M%S')
-    logdir = f"logs/{subdir}"
+def setup_logger(name):
+    subdir = get_time()
+    logdir = f"logs/{name}/{subdir}"
     writer = SummaryWriter(log_dir=logdir)
     return writer
 
 
+def get_time():
+    return datetime.datetime.now().strftime('%Y-%m-%dT%H%M%S')
+
+
 class Lite(LightningLite):
-    def run(self, model, loss_fn, miner, epochs, lr, batch_size):
+    # noinspection PyMethodOverriding
+    def run(self, name, model, loss_fn, miner, epochs, lr, batch_size, freq, load_dir=None):
+        start_time = get_time()
+
         # LOGGING
-        self.writer = setup_logger()
+        self.name = name
+        self.writer = setup_logger(name)
 
         # Data
         train_loader, val_loader, test_loader = self.setup_data(batch_size)
         self.train_loader, self.val_loader, self.test_loader = train_loader, val_loader, test_loader
+
+        # Load model
+        if load_dir:
+            state_dict = self.load(load_dir)
+            model.load_state_dict(state_dict)
 
         # Optimizer
         optimizer = optim.Adam(model.parameters(), lr=lr)
@@ -61,6 +80,8 @@ class Lite(LightningLite):
 
         num_batches = len(train_loader)
         for epoch in range(epochs):
+            self.epoch = epoch
+            logging.info(f"Epoch: {epoch}")
             epoch_loss = 0.0
             for i, (image, target) in enumerate(train_loader):
                 optimizer.zero_grad()
@@ -77,48 +98,69 @@ class Lite(LightningLite):
             average_train_loss = epoch_loss / num_batches
             self.writer.add_scalar("avg_train_loss", average_train_loss, epoch)
 
-            # Validate
-            self.validate(epoch)
+            # Validate frequency
+            if (epoch != 0) and (epoch % freq == 0):
+                logging.info('Validating model')
+                self.validate()
+
+                filepath = f"models/{name}/{start_time}/checkpoint_{epoch}.ckpt"
+                logging.info(f'Saving model @ {filepath}')
+                self.save(
+                    content=model.module.state_dict(),
+                    filepath=filepath
+                )
 
         return model
 
-    def validate(self, epoch):
-        accuracy = test_model(self.train_loader.dataset,
-                              self.val_loader.dataset,
-                              self.model,
-                              self.device)["precision_at_1"]
-
-        self.writer.add_scalar("val_acc", accuracy, epoch)
-
-        self.visualize(self.val_loader, epoch)
-
-    def test(self):
+    def validate(self):
         accuracy = test_model(self.train_loader.dataset,
                               self.val_loader.dataset,
                               self.model,
                               self.device)
 
-        self.writer.add_scalar('test_acc', accuracy["precision_at_1"])
+        self.writer.add_scalar("val_acc", accuracy["precision_at_1"], self.epoch)
+        self.writer.add_scalar("val_map", accuracy['mean_average_precision'], self.epoch)
 
-        self.visualize(self.test_loader, 10000000)
+        self.visualize(self.val_loader, self.val_loader.dataset.dataset.class_to_idx)
 
-    def visualize(self, dataloader, epoch):
-        logging.info('Running TSNE')
+    def test(self):
+        accuracy = test_model(self.train_loader.dataset,
+                              self.test_loader.dataset,
+                              self.model,
+                              self.device)
 
-        dataset = dataloader.dataset.dataset
+        self.writer.add_scalar("test_acc", accuracy["precision_at_1"], self.epoch)
+        self.writer.add_scalar("test_map", accuracy['mean_average_precision'], self.epoch)
+
+        self.visualize(self.test_loader, self.test_loader.dataset.class_to_idx)
+
+    def visualize(self, dataloader, class_to_idx):
+        logging.info(f'Running TSNE, epoch {self.epoch}')
+
+        fig, ax = plt.subplots(1, 1, figsize=(15, 15))
+
+        images = []
+        targets = []
 
         for image, target in dataloader:
-            x = self.forward(image)
+            images.append(image)
+            targets.append(target)
 
-            embeddings = TSNE(learning_rate='auto', n_jobs=-1, init='random').fit_transform(x.cpu().detach().numpy())
+        image = torch.cat(images, dim=0)
+        target = torch.cat(targets, dim=0)
 
-            embeddings = embeddings
+        x = self.forward(image)
 
-            for cls in dataset.classes:
-                idx = target.cpu().detach().numpy() == dataset.class_to_idx[cls]
-                plt.plot(embeddings[idx, 0], embeddings[idx, 1], marker='.', label=cls)
+        embeddings = TSNE(learning_rate='auto', n_jobs=-1, init='random').fit_transform(x.cpu().detach().numpy())
 
-        self.writer.add_figure('T-SNE', plt.gcf(), epoch)
+        classes = list(class_to_idx.keys())
+        for cls in classes:
+            idx = target.cpu().detach().numpy() == class_to_idx[cls]
+            ax.scatter(embeddings[idx, 0], embeddings[idx, 1], marker='.', label=cls)
+
+        ax.legend()
+        self.writer.add_figure('T-SNE', fig, self.epoch)
+
         logging.info('Finished T-SNE')
 
     def setup_data(self, batch_size):
