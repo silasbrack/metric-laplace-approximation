@@ -9,9 +9,12 @@ from matplotlib import pyplot as plt
 from pl_bolts.datamodules import CIFAR10DataModule
 from pytorch_lightning.lite import LightningLite
 from pytorch_metric_learning import losses, miners
-from sklearn.manifold import TSNE
+from MulticoreTSNE import MulticoreTSNE as TSNE
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+import numpy as np
+import umap
+import umap.plot
 
 from src.models import ConvNet
 from src.models.utils import test_model
@@ -135,9 +138,9 @@ class Lite(LightningLite):
         self.visualize(self.test_loader, self.test_loader.dataset.class_to_idx)
 
     def visualize(self, dataloader, class_to_idx):
-        logging.info(f'Running TSNE, epoch {self.epoch}')
+        logging.info(f'Running visualization, epoch {self.epoch}')
 
-        fig, ax = plt.subplots(1, 1, figsize=(15, 15))
+        fig, ax = plt.subplots(1, 1, figsize=(10, 10))
 
         images = []
         targets = []
@@ -151,15 +154,17 @@ class Lite(LightningLite):
 
         x = self.forward(image)
 
-        embeddings = TSNE(learning_rate='auto', n_jobs=-1, init='random').fit_transform(x.cpu().detach().numpy())
+        target = target.cpu().detach().numpy()
+        x = x.cpu().detach().numpy()
 
-        classes = list(class_to_idx.keys())
-        for cls in classes:
-            idx = target.cpu().detach().numpy() == class_to_idx[cls]
-            ax.scatter(embeddings[idx, 0], embeddings[idx, 1], marker='.', label=cls)
+        idx_to_class = {v: k for k, v in class_to_idx.items()}
 
-        ax.legend()
-        self.writer.add_figure('T-SNE', fig, self.epoch)
+        labels = np.array([idx_to_class[i] for i in target])
+
+        mapper = umap.UMAP().fit(x)
+        umap.plot.points(mapper, labels=labels, ax=ax)
+
+        self.writer.add_figure('UMAP', fig, self.epoch)
 
         logging.info('Finished T-SNE')
 
