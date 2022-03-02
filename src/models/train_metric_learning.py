@@ -90,7 +90,7 @@ class Lite(LightningLite):
 
         self.writer.add_scalar("val_acc", accuracy, epoch)
 
-        self.visualize(self.val_loader)
+        self.visualize(self.val_loader, epoch)
 
     def test(self):
         accuracy = test_model(self.train_loader.dataset,
@@ -100,9 +100,9 @@ class Lite(LightningLite):
 
         self.writer.add_scalar('test_acc', accuracy["precision_at_1"])
 
-        self.visualize(self.test_loader)
+        self.visualize(self.test_loader, 10000000)
 
-    def visualize(self, dataloader):
+    def visualize(self, dataloader, epoch):
         logging.info('Running TSNE')
 
         dataset = dataloader.dataset.dataset
@@ -118,7 +118,7 @@ class Lite(LightningLite):
                 idx = target.cpu().detach().numpy() == dataset.class_to_idx[cls]
                 plt.plot(embeddings[idx, 0], embeddings[idx, 1], marker='.', label=cls)
 
-        self.writer.add_figure('T-SNE', plt.gcf())
+        self.writer.add_figure('T-SNE', plt.gcf(), epoch)
         logging.info('Finished T-SNE')
 
     def setup_data(self, batch_size):
