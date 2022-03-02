@@ -3,11 +3,10 @@ import logging
 import fire
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.tensorboard import SummaryWriter
 from pl_bolts.datamodules import CIFAR10DataModule
 from pytorch_metric_learning import losses, miners
+from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from src.models.train_helper import test_model
@@ -17,7 +16,6 @@ torch.manual_seed(1234)
 
 
 def run(epochs=10, lr=0.01, batch_size=64):
-    writer = SummaryWriter(log_dir="logs/")
 
     data = CIFAR10DataModule("./data", batch_size=batch_size, num_workers=4, normalize=True)
     data.setup()
@@ -37,11 +35,17 @@ def run(epochs=10, lr=0.01, batch_size=64):
         nn.Linear(500, 50),
     ).to(device)
 
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    model = train(device, epochs, lr, model, train_loader, val_loader)
+    accuracy = test_model(data.dataset_train, data.dataset_test, model, device)["precision_at_1"]
+    print(f"Accuracy = {100*accuracy:.2f}")
 
+
+def train(device, epochs, lr, model, train_loader, val_loader):
+    writer = SummaryWriter(log_dir="logs/")
+
+    optimizer = optim.Adam(model.parameters(), lr=lr)
     loss_fn = losses.TripletMarginLoss()
     miner = miners.MultiSimilarityMiner()
-
     num_batches = len(train_loader)
     for epoch in range(epochs):
         epoch_loss = 0.0
@@ -57,7 +61,7 @@ def run(epochs=10, lr=0.01, batch_size=64):
             loss.backward()
             optimizer.step()
             loss = loss.item()
-            writer.add_scalar("train_loss", loss, num_batches*epoch + i)
+            writer.add_scalar("train_loss", loss, num_batches * epoch + i)
             epoch_bar.set_postfix({"Loss": loss, "Pos pairs": miner.num_pos_pairs, "Neg pairs": miner.num_neg_pairs})
         average_epoch_loss = epoch_loss / num_batches
         writer.add_scalar("epoch_loss", average_epoch_loss, epoch)
