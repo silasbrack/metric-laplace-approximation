@@ -24,14 +24,26 @@ logging.getLogger().setLevel(logging.INFO)
 torch.manual_seed(1234)
 
 
-def run(epochs=10, lr=0.01, batch_size=64):
+def run(epochs=1000, lr=0.01, batch_size=64):
     model = ConvNet()
     loss_fn = losses.TripletMarginLoss()
-    miner = miners.MultiSimilarityMiner()
+    miner = miners.TripletMarginMiner()
+
+    params = {
+        'epochs': epochs,
+        'lr': lr,
+        'batch_size': batch_size,
+        'model': model.__class__.__name__,
+        'miner': miner.__class__.__name__,
+        'loss_fn': loss_fn.__class__.__name__,
+        'cuda': torch.cuda.is_available()
+    }
+
+    logging.info(f'Parameters: {params}')
 
     lite = Lite(gpus=1 if torch.cuda.is_available() else 0)
 
-    lite.run(name='metric-triplet',
+    lite.run(name='metric-triplet-miner',
              model=model,
              loss_fn=loss_fn,
              miner=miner,
@@ -166,7 +178,7 @@ class Lite(LightningLite):
 
         self.writer.add_figure('UMAP', fig, self.epoch)
 
-        logging.info('Finished T-SNE')
+        logging.info('Finished UMAP')
 
     def setup_data(self, batch_size):
         # DATA
@@ -185,4 +197,4 @@ class Lite(LightningLite):
 
 
 if __name__ == "__main__":
-    fire.Fire(run())
+    fire.Fire(run)
