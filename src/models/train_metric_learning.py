@@ -1,55 +1,63 @@
+import datetime
 import logging
 
 import fire
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from matplotlib import pyplot as plt
 from pl_bolts.datamodules import CIFAR10DataModule
 from pytorch_lightning.lite import LightningLite
 from pytorch_metric_learning import losses, miners
+from sklearn.manifold import TSNE
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from src.models.train_helper import test_model
+from src.models import ConvNet
+from src.models.utils import test_model
 
 logging.getLogger().setLevel(logging.INFO)
 torch.manual_seed(1234)
 
 
 def run(epochs=10, lr=0.01, batch_size=64):
+    model = ConvNet()
+    loss_fn = losses.TripletMarginLoss()
+    miner = miners.MultiSimilarityMiner()
 
-    data = CIFAR10DataModule("./data", batch_size=batch_size, num_workers=4, normalize=True)
-    data.setup()
+    lite = Lite(gpus=1)
+    lite.run(model,
+             loss_fn,
+             miner,
+             epochs,
+             lr,
+             batch_size)
 
-    train_loader = data.train_dataloader()
-    val_loader = data.val_dataloader()
+    lite.test()
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = nn.Sequential(
-        nn.Conv2d(3, 10, kernel_size=5),
-        nn.MaxPool2d(2),
-        nn.ReLU(),
-        nn.Conv2d(10, 20, kernel_size=5),
-        nn.MaxPool2d(2),
-        nn.ReLU(),
-        nn.Flatten(),
-        nn.Linear(500, 50),
-    )
 
-    model = Lite(gpus=1).run(epochs, lr, model, train_loader, val_loader)
-    accuracy = test_model(data.dataset_train, data.dataset_test, model, device)["precision_at_1"]
-    print(f"Accuracy = {100*accuracy:.2f}")
+def setup_logger():
+    subdir = datetime.datetime.now().strftime('%Y-%m-%dT%H%M%S')
+    logdir = f"logs/{subdir}"
+    writer = SummaryWriter(log_dir=logdir)
+    return writer
 
 
 class Lite(LightningLite):
-    def run(self, epochs, lr, model, train_loader, val_loader):
-        writer = SummaryWriter(log_dir="logs/")
-        optimizer = optim.Adam(model.parameters(), lr=lr)
-        loss_fn = losses.TripletMarginLoss()
-        miner = miners.MultiSimilarityMiner()
+    def run(self, model, loss_fn, miner, epochs, lr, batch_size):
+        # LOGGING
+        self.writer = setup_logger()
 
+        # Data
+        train_loader, val_loader, test_loader = self.setup_data(batch_size)
+        self.train_loader, self.val_loader, self.test_loader = train_loader, val_loader, test_loader
+
+        # Optimizer
+        optimizer = optim.Adam(model.parameters(), lr=lr)
+
+        # Lite setup
         model, optimizer = self.setup(model, optimizer)
-        train_loader, val_loader = self.setup_dataloaders(train_loader, val_loader)
+        self.model = model
 
         num_batches = len(train_loader)
         for epoch in range(epochs):
@@ -57,18 +65,76 @@ class Lite(LightningLite):
             for i, (image, target) in enumerate(train_loader):
                 optimizer.zero_grad()
                 output = model(image)
+
                 hard_pairs = miner(output, target)
                 loss = loss_fn(output, target, hard_pairs)
                 self.backward(loss)
                 epoch_loss += loss.item()
                 optimizer.step()
-                writer.add_scalar("train_loss", loss, num_batches * epoch + i)
 
-            average_epoch_loss = epoch_loss / num_batches
-            writer.add_scalar("epoch_loss", average_epoch_loss, epoch)
-            accuracy = test_model(train_loader.dataset, val_loader.dataset, model, self.device)["precision_at_1"]
-            writer.add_scalar("val_acc", accuracy, epoch)
+                self.writer.add_scalar("train_loss", loss, num_batches * epoch + i)
+
+            average_train_loss = epoch_loss / num_batches
+            self.writer.add_scalar("avg_train_loss", average_train_loss, epoch)
+
+            # Validate
+            self.validate(epoch)
+
         return model
+
+    def validate(self, epoch):
+        accuracy = test_model(self.train_loader.dataset,
+                              self.val_loader.dataset,
+                              self.model,
+                              self.device)["precision_at_1"]
+
+        self.writer.add_scalar("val_acc", accuracy, epoch)
+
+        self.visualize(self.val_loader)
+
+    def test(self):
+        accuracy = test_model(self.train_loader.dataset,
+                              self.val_loader.dataset,
+                              self.model,
+                              self.device)
+
+        self.writer.add_scalar('test_acc', accuracy["precision_at_1"])
+
+        self.visualize(self.test_loader)
+
+    def visualize(self, dataloader):
+        logging.info('Running TSNE')
+
+        dataset = dataloader.dataset.dataset
+
+        for image, target in dataloader:
+            x = self.forward(image)
+
+            embeddings = TSNE(learning_rate='auto', n_jobs=-1, init='random').fit_transform(x.cpu().detach().numpy())
+
+            embeddings = embeddings
+
+            for cls in dataset.classes:
+                idx = target.cpu().detach().numpy() == dataset.class_to_idx[cls]
+                plt.plot(embeddings[idx, 0], embeddings[idx, 1], marker='.', label=cls)
+
+        self.writer.add_figure('T-SNE', plt.gcf())
+        logging.info('Finished T-SNE')
+
+    def setup_data(self, batch_size):
+        # DATA
+        data = CIFAR10DataModule("./data", batch_size=batch_size, num_workers=4, normalize=True)
+        data.prepare_data()
+        data.setup()
+
+        train_loader = data.train_dataloader()
+        val_loader = data.val_dataloader()
+        test_loader = data.test_dataloader()
+
+        return self.setup_dataloaders(train_loader, val_loader, test_loader)
+
+    def forward(self, x):
+        return self.model(x)
 
 
 if __name__ == "__main__":

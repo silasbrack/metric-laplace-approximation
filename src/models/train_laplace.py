@@ -4,7 +4,7 @@ from laplace import Laplace
 from pl_bolts.datamodules import CIFAR10DataModule
 from torch import nn
 
-from src.models.train_helper import test_model
+from src.models.utils import test_model
 from src.models.train_metric_learning import train
 
 
