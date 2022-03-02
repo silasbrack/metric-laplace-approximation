@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from pl_bolts.datamodules import CIFAR10DataModule
+from pytorch_lightning.lite import LightningLite
 from pytorch_metric_learning import losses, miners
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
@@ -33,41 +34,41 @@ def run(epochs=10, lr=0.01, batch_size=64):
         nn.ReLU(),
         nn.Flatten(),
         nn.Linear(500, 50),
-    ).to(device)
+    )
 
-    model = train(device, epochs, lr, model, train_loader, val_loader)
+    model = Lite(gpus=1).run(epochs, lr, model, train_loader, val_loader)
     accuracy = test_model(data.dataset_train, data.dataset_test, model, device)["precision_at_1"]
     print(f"Accuracy = {100*accuracy:.2f}")
 
 
-def train(device, epochs, lr, model, train_loader, val_loader):
-    writer = SummaryWriter(log_dir="logs/")
+class Lite(LightningLite):
+    def run(self, epochs, lr, model, train_loader, val_loader):
+        writer = SummaryWriter(log_dir="logs/")
+        optimizer = optim.Adam(model.parameters(), lr=lr)
+        loss_fn = losses.TripletMarginLoss()
+        miner = miners.MultiSimilarityMiner()
 
-    optimizer = optim.Adam(model.parameters(), lr=lr)
-    loss_fn = losses.TripletMarginLoss()
-    miner = miners.MultiSimilarityMiner()
-    num_batches = len(train_loader)
-    for epoch in range(epochs):
-        epoch_loss = 0.0
-        epoch_bar = tqdm(train_loader)
-        epoch_bar.set_description(f"Epoch {epoch}")
-        for i, (image, target) in enumerate(epoch_bar):
-            image, target = image.to(device), target.to(device)
-            optimizer.zero_grad()
-            output = model(image)
-            hard_pairs = miner(output, target)
-            loss = loss_fn(output, target, hard_pairs)
-            epoch_loss += loss.item()
-            loss.backward()
-            optimizer.step()
-            loss = loss.item()
-            writer.add_scalar("train_loss", loss, num_batches * epoch + i)
-            epoch_bar.set_postfix({"Loss": loss, "Pos pairs": miner.num_pos_pairs, "Neg pairs": miner.num_neg_pairs})
-        average_epoch_loss = epoch_loss / num_batches
-        writer.add_scalar("epoch_loss", average_epoch_loss, epoch)
-        accuracy = test_model(train_loader.dataset, val_loader.dataset, model, device)["precision_at_1"]
-        writer.add_scalar("val_acc", accuracy, epoch)
-    return model
+        model, optimizer = self.setup(model, optimizer)
+        train_loader, val_loader = self.setup_dataloaders(train_loader, val_loader)
+
+        num_batches = len(train_loader)
+        for epoch in range(epochs):
+            epoch_loss = 0.0
+            for i, (image, target) in enumerate(train_loader):
+                optimizer.zero_grad()
+                output = model(image)
+                hard_pairs = miner(output, target)
+                loss = loss_fn(output, target, hard_pairs)
+                self.backward(loss)
+                epoch_loss += loss.item()
+                optimizer.step()
+                writer.add_scalar("train_loss", loss, num_batches * epoch + i)
+
+            average_epoch_loss = epoch_loss / num_batches
+            writer.add_scalar("epoch_loss", average_epoch_loss, epoch)
+            accuracy = test_model(train_loader.dataset, val_loader.dataset, model, self.device)["precision_at_1"]
+            writer.add_scalar("val_acc", accuracy, epoch)
+        return model
 
 
 if __name__ == "__main__":
