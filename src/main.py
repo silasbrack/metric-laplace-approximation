@@ -44,6 +44,7 @@ class MLP(nn.Module):
 def run():
     global device, trunk
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f'USING DEVICE MOTHERFUCKER: {device}')
     # Set trunk model and replace the softmax layer with an identity function
     trunk = torchvision.models.resnet18(pretrained=True)
     trunk_output_size = trunk.fc.in_features
@@ -169,7 +170,7 @@ def run():
         end_of_testing_hook=hooks.end_of_testing_hook,
         visualizer=TSNE(),
         visualizer_hook=visualizer_hook,
-        dataloader_num_workers=0,
+        dataloader_num_workers=4,
         accuracy_calculator=AccuracyCalculator(k="max_bin_count"),
     )
     end_of_epoch_hook = hooks.end_of_epoch_hook(
@@ -183,7 +184,7 @@ def run():
         mining_funcs,
         train_dataset,
         sampler=sampler,
-        dataloader_num_workers=0,
+        dataloader_num_workers=4,
         end_of_iteration_hook=hooks.end_of_iteration_hook,
         end_of_epoch_hook=end_of_epoch_hook,
     )
