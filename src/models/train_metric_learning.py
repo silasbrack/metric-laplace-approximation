@@ -24,9 +24,13 @@ logging.getLogger().setLevel(logging.INFO)
 torch.manual_seed(1234)
 
 
-def run(epochs=1000, lr=0.01, batch_size=64):
+def run(epochs=1000,
+        freq=2,
+        lr=0.01,
+        batch_size=64):
+
     model = ConvNet()
-    loss_fn = losses.TripletMarginLoss()
+    loss_fn = losses.ContrastiveLoss()
     miner = miners.TripletMarginMiner()
 
     params = {
@@ -43,16 +47,12 @@ def run(epochs=1000, lr=0.01, batch_size=64):
 
     lite = Lite(gpus=1 if torch.cuda.is_available() else 0)
 
-    lite.run(name='metric-triplet-miner',
-             model=model,
-             loss_fn=loss_fn,
-             miner=miner,
-             epochs=epochs,
-             lr=lr,
-             batch_size=batch_size,
-             freq=2,
-             load_dir=None
-             )
+    # Init
+    lite.init(name='metric-contrastive',
+              model=model,
+              batch_size=batch_size,
+              lr=lr,
+              load_dir='models/metric-contrastive/2022-03-02T170747/checkpoint_998.ckpt')
 
     lite.test()
 
@@ -69,17 +69,12 @@ def get_time():
 
 
 class Lite(LightningLite):
-    # noinspection PyMethodOverriding
-    def run(self, name, model, loss_fn, miner, epochs, lr, batch_size, freq, load_dir=None):
-        start_time = get_time()
-
+    def init(self, name, model, batch_size, lr, load_dir):
         # LOGGING
         self.name = name
         self.writer = setup_logger(name)
-
         # Data
-        train_loader, val_loader, test_loader = self.setup_data(batch_size)
-        self.train_loader, self.val_loader, self.test_loader = train_loader, val_loader, test_loader
+        self.train_loader, self.val_loader, self.test_loader = self.setup_data(batch_size)
 
         # Load model
         if load_dir:
@@ -90,8 +85,21 @@ class Lite(LightningLite):
         optimizer = optim.Adam(model.parameters(), lr=lr)
 
         # Lite setup
-        model, optimizer = self.setup(model, optimizer)
-        self.model = model
+        self.model, self.optimizer = self.setup(model, optimizer)
+        self.epoch = 0
+
+    def train(self, loss_fn, miner, epochs, freq):
+        return self.run(loss_fn, miner, epochs, freq)
+
+    # noinspection PyMethodOverriding
+    def run(self, loss_fn, miner, epochs, freq):
+        start_time = get_time()
+
+        if not self.name:
+            raise ValueError('Please run lite.init(name, model, batch_size, lr, load_dir)')
+
+        train_loader = self.train_loader
+        optimizer = self.optimizer
 
         num_batches = len(train_loader)
         for epoch in range(epochs):
@@ -100,7 +108,7 @@ class Lite(LightningLite):
             epoch_loss = 0.0
             for i, (image, target) in enumerate(train_loader):
                 optimizer.zero_grad()
-                output = model(image)
+                output = self.model(image)
 
                 hard_pairs = miner(output, target)
                 loss = loss_fn(output, target, hard_pairs)
@@ -115,19 +123,19 @@ class Lite(LightningLite):
 
             # Validate frequency
             if (epoch != 0) and (epoch % freq == 0):
-                logging.info('Validating model')
                 self.validate()
 
-                filepath = f"models/{name}/{start_time}/checkpoint_{epoch}.ckpt"
+                filepath = f"models/{self.name}/{start_time}/checkpoint_{epoch}.ckpt"
                 logging.info(f'Saving model @ {filepath}')
                 self.save(
-                    content=model.module.state_dict(),
+                    content=self.model.module.state_dict(),
                     filepath=filepath
                 )
 
-        return model
+        return self.model
 
     def validate(self):
+        logging.info('Validating')
         accuracy = test_model(self.train_loader.dataset,
                               self.val_loader.dataset,
                               self.model,
@@ -139,6 +147,7 @@ class Lite(LightningLite):
         self.visualize(self.val_loader, self.val_loader.dataset.dataset.class_to_idx)
 
     def test(self):
+        logging.info('Testing')
         accuracy = test_model(self.train_loader.dataset,
                               self.test_loader.dataset,
                               self.model,
