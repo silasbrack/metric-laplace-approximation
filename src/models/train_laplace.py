@@ -5,7 +5,7 @@ from pl_bolts.datamodules import CIFAR10DataModule
 from torch import nn
 
 from src.models.utils import test_model
-from src.models.train_metric_learning import train
+from src.models.metric_learning import train
 
 
 def run(epochs=10, lr=0.01, batch_size=64):

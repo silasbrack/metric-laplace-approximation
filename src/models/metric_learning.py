@@ -1,60 +1,20 @@
 import datetime
 import logging
 
-import fire
+import numpy as np
 import torch
-import torch.nn as nn
-import torch.optim as optim
+import umap
+import umap.plot
 from matplotlib import pyplot as plt
 from pl_bolts.datamodules import CIFAR10DataModule
 from pytorch_lightning.lite import LightningLite
-from pytorch_metric_learning import losses, miners
-from MulticoreTSNE import MulticoreTSNE as TSNE
 from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
-import numpy as np
-import umap
-import umap.plot
 
-from src.models import ConvNet
 from src.models.utils import test_model
 
 plt.switch_backend('agg')
 logging.getLogger().setLevel(logging.INFO)
 torch.manual_seed(1234)
-
-
-def run(epochs=1000,
-        freq=2,
-        lr=0.01,
-        batch_size=64):
-
-    model = ConvNet()
-    loss_fn = losses.ContrastiveLoss()
-    miner = miners.TripletMarginMiner()
-
-    params = {
-        'epochs': epochs,
-        'lr': lr,
-        'batch_size': batch_size,
-        'model': model.__class__.__name__,
-        'miner': miner.__class__.__name__,
-        'loss_fn': loss_fn.__class__.__name__,
-        'cuda': torch.cuda.is_available()
-    }
-
-    logging.info(f'Parameters: {params}')
-
-    lite = Lite(gpus=1 if torch.cuda.is_available() else 0)
-
-    # Init
-    lite.init(name='metric-contrastive',
-              model=model,
-              batch_size=batch_size,
-              lr=lr,
-              load_dir='models/metric-contrastive/2022-03-02T170747/checkpoint_998.ckpt')
-
-    lite.test()
 
 
 def setup_logger(name):
@@ -69,11 +29,13 @@ def get_time():
 
 
 class Lite(LightningLite):
-    def init(self, name, model, batch_size, lr, load_dir):
+    def init(self, name, model, loss_fn, miner, batch_size, optimizer, load_dir):
         # LOGGING
         self.name = name
         self.writer = setup_logger(name)
+
         # Data
+        self.batch_size = batch_size
         self.train_loader, self.val_loader, self.test_loader = self.setup_data(batch_size)
 
         # Load model
@@ -81,47 +43,46 @@ class Lite(LightningLite):
             state_dict = self.load(load_dir)
             model.load_state_dict(state_dict)
 
-        # Optimizer
-        optimizer = optim.Adam(model.parameters(), lr=lr)
+        # Miners and Loss
+        self.loss_fn = loss_fn
+        self.miner = miner
 
         # Lite setup
         self.model, self.optimizer = self.setup(model, optimizer)
         self.epoch = 0
 
-    def train(self, loss_fn, miner, epochs, freq):
-        return self.run(loss_fn, miner, epochs, freq)
+    def train(self, epochs, freq):
+        return self.run(epochs, freq)
 
     # noinspection PyMethodOverriding
-    def run(self, loss_fn, miner, epochs, freq):
+    def run(self, epochs, freq):
+        logging.info(f'Training')
+        self.model.train()
+
         start_time = get_time()
 
         if not self.name:
             raise ValueError('Please run lite.init(name, model, batch_size, lr, load_dir)')
 
-        train_loader = self.train_loader
-        optimizer = self.optimizer
-
-        num_batches = len(train_loader)
         for epoch in range(epochs):
             self.epoch = epoch
+
             logging.info(f"Epoch: {epoch}")
             epoch_loss = 0.0
-            for i, (image, target) in enumerate(train_loader):
-                optimizer.zero_grad()
+            for i, (image, target) in enumerate(self.train_loader):
+                self.optimizer.zero_grad()
                 output = self.model(image)
 
-                hard_pairs = miner(output, target)
-                loss = loss_fn(output, target, hard_pairs)
+                hard_pairs = self.miner(output, target)
+                loss = self.loss_fn(output, target, hard_pairs)
                 self.backward(loss)
                 epoch_loss += loss.item()
-                optimizer.step()
+                self.optimizer.step()
 
-                self.writer.add_scalar("train_loss", loss, num_batches * epoch + i)
+            average_train_loss = epoch_loss / (i + 1)
+            self.writer.add_scalar("train_loss", average_train_loss, global_step=epoch, new_style=True)
 
-            average_train_loss = epoch_loss / num_batches
-            self.writer.add_scalar("avg_train_loss", average_train_loss, epoch)
-
-            # Validate frequency
+            # Validate @ frequency
             if (epoch != 0) and (epoch % freq == 0):
                 self.validate()
 
@@ -132,10 +93,25 @@ class Lite(LightningLite):
                     filepath=filepath
                 )
 
+        logging.info(f'Finished training @ epoch: {self.epoch}')
+        self.log_hyperparams()
         return self.model
 
     def validate(self):
-        logging.info('Validating')
+        logging.info(f'Validating @ epoch: {self.epoch}')
+
+        self.model.eval()
+        val_loss = 0.0
+        for i, (image, target) in enumerate(self.val_loader):
+            output = self.model(image)
+
+            hard_pairs = self.miner(output, target)
+            loss = self.loss_fn(output, target, hard_pairs)
+            val_loss += loss.item()
+
+        average_val_loss = val_loss / (i + 1)
+        self.writer.add_scalar("val_loss", average_val_loss, global_step=self.epoch, new_style=True)
+
         accuracy = test_model(self.train_loader.dataset,
                               self.val_loader.dataset,
                               self.model,
@@ -147,7 +123,7 @@ class Lite(LightningLite):
         self.visualize(self.val_loader, self.val_loader.dataset.dataset.class_to_idx)
 
     def test(self):
-        logging.info('Testing')
+        logging.info(f'Testing @ epoch: {self.epoch}')
         accuracy = test_model(self.train_loader.dataset,
                               self.test_loader.dataset,
                               self.model,
@@ -159,7 +135,7 @@ class Lite(LightningLite):
         self.visualize(self.test_loader, self.test_loader.dataset.class_to_idx)
 
     def visualize(self, dataloader, class_to_idx):
-        logging.info(f'Running visualization, epoch {self.epoch}')
+        logging.info(f'Visualizing @ epoch: {self.epoch}')
 
         fig, ax = plt.subplots(1, 1, figsize=(10, 10))
 
@@ -204,6 +180,31 @@ class Lite(LightningLite):
     def forward(self, x):
         return self.model(x)
 
+    def log_hyperparams(self):
+        logging.info('Logging hyperparameters')
+        test_accuracy = test_model(self.train_loader.dataset,
+                                   self.test_loader.dataset,
+                                   self.model,
+                                   self.device)
 
-if __name__ == "__main__":
-    fire.Fire(run)
+        val_accuracy = test_model(self.train_loader.dataset,
+                                  self.val_loader.dataset,
+                                  self.model,
+                                  self.device)
+
+        self.writer.add_hparams(
+            hparam_dict={
+                'name': self.name,
+                'epoch': self.epoch,
+                'lr': self.optimizer.defaults['lr'],
+                'batch_size': self.batch_size,
+                'model': self.model.module.__class__.__name__,
+                'miner': self.miner.__class__.__name__,
+                'loss_fn': self.loss_fn.__class__.__name__,
+            },
+            metric_dict={
+                'test_acc': test_accuracy['precision_at_1'],
+                'test_map': test_accuracy['mean_average_precision'],
+                'val_acc': val_accuracy['precision_at_1'],
+                'val_map': val_accuracy['mean_average_precision'],
+            })
