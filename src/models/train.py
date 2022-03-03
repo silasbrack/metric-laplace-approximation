@@ -9,15 +9,26 @@ from src.models import ConvNet
 from src.models.metric_learning import Lite
 
 
-def run(epochs=6,
+def run(loss='contrastive',
+        miner='multisimilarity',
+        epochs=0,
         freq=2,
         lr=3e-4,
         batch_size=64,
         name='testing'):
 
     model = ConvNet()
-    loss_fn = losses.TripletMarginLoss()
-    miner = miners.MultiSimilarityMiner()
+
+    if loss == 'contrastive':
+        loss_fn = losses.ContrastiveLoss()
+    elif loss == 'triplet':
+        loss_fn = losses.TripletMarginLoss()
+
+    if miner == 'multisimilarity':
+        miner = miners.MultiSimilarityMiner()
+    elif miner == 'triplet':
+        miner = miners.TripletMarginMiner()
+
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
     params = {

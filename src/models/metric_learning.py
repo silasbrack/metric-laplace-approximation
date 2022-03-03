@@ -83,7 +83,7 @@ class Lite(LightningLite):
             self.writer.add_scalar("train_loss", average_train_loss, global_step=epoch, new_style=True)
 
             # Validate @ frequency
-            if (epoch != 0) and (epoch % freq == 0):
+            if epoch % freq == 0:
                 self.validate()
 
                 filepath = f"models/{self.name}/{start_time}/checkpoint_{epoch}.ckpt"
@@ -200,7 +200,6 @@ class Lite(LightningLite):
                                    self.test_loader.dataset,
                                    self.model,
                                    self.device)
-
 
         self.writer.add_hparams(
             hparam_dict={
