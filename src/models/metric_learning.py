@@ -62,7 +62,7 @@ class Lite(LightningLite):
         start_time = get_time()
 
         if not self.name:
-            raise ValueError('Please run lite.init(name, model, batch_size, lr, load_dir)')
+            raise ValueError('Please run .init()')
 
         for epoch in range(epochs):
             self.epoch = epoch
@@ -182,29 +182,42 @@ class Lite(LightningLite):
 
     def log_hyperparams(self):
         logging.info('Logging hyperparameters')
-        test_accuracy = test_model(self.train_loader.dataset,
-                                   self.test_loader.dataset,
-                                   self.model,
-                                   self.device)
 
+        logging.info('Calculating train accuracy')
+        train_accuracy = test_model(self.train_loader.dataset,
+                                    self.train_loader.dataset,
+                                    self.model,
+                                    self.device)
+
+        logging.info('Calculating validation accuracy')
         val_accuracy = test_model(self.train_loader.dataset,
                                   self.val_loader.dataset,
                                   self.model,
                                   self.device)
 
+        logging.info('Calculating test accuracy')
+        test_accuracy = test_model(self.train_loader.dataset,
+                                   self.test_loader.dataset,
+                                   self.model,
+                                   self.device)
+
+
         self.writer.add_hparams(
             hparam_dict={
                 'name': self.name,
-                'epoch': self.epoch,
+                'miner': self.miner.__class__.__name__,
+                'loss_fn': self.loss_fn.__class__.__name__,
+                'epoch': self.epoch + 1,
                 'lr': self.optimizer.defaults['lr'],
                 'batch_size': self.batch_size,
                 'model': self.model.module.__class__.__name__,
-                'miner': self.miner.__class__.__name__,
-                'loss_fn': self.loss_fn.__class__.__name__,
             },
             metric_dict={
-                'test_acc': test_accuracy['precision_at_1'],
-                'test_map': test_accuracy['mean_average_precision'],
+                'train_acc': train_accuracy['precision_at_1'],
+                'train_map': train_accuracy['mean_average_precision'],
                 'val_acc': val_accuracy['precision_at_1'],
                 'val_map': val_accuracy['mean_average_precision'],
-            })
+                'test_acc': test_accuracy['precision_at_1'],
+                'test_map': test_accuracy['mean_average_precision']
+            },
+            run_name=".")
