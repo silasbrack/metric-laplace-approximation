@@ -23,11 +23,15 @@ def run(loss='contrastive',
         loss_fn = losses.ContrastiveLoss()
     elif loss == 'triplet':
         loss_fn = losses.TripletMarginLoss()
+    else:
+        raise ValueError(f"{loss} is not a recognized loss")
 
     if miner == 'multisimilarity':
-        miner = miners.MultiSimilarityMiner()
+        miner_fn = miners.MultiSimilarityMiner()
     elif miner == 'triplet':
-        miner = miners.TripletMarginMiner()
+        miner_fn = miners.TripletMarginMiner()
+    else:
+        raise ValueError(f"{miner} is not a recognized miner")
 
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
@@ -37,7 +41,7 @@ def run(loss='contrastive',
         'lr': lr,
         'batch_size': batch_size,
         'model': model.__class__.__name__,
-        'miner': miner.__class__.__name__,
+        'miner': miner_fn.__class__.__name__,
         'loss_fn': loss_fn.__class__.__name__,
         'cuda': torch.cuda.is_available()
     }
@@ -50,7 +54,7 @@ def run(loss='contrastive',
     lite.init(name=name,
               model=model,
               loss_fn=loss_fn,
-              miner=miner,
+              miner=miner_fn,
               batch_size=batch_size,
               optimizer=optimizer,
               load_dir=None

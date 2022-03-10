@@ -1,4 +1,5 @@
 import fire
+import numpy as np
 import pytorch_lightning as pl
 import torch
 import torchmetrics
@@ -9,28 +10,7 @@ from pl_bolts.datamodules import CIFAR10DataModule
 from src.models.classification_conv_net import ConvNet
 
 
-@torch.no_grad()
-def predict(dataloader, model, laplace=False):
-    py = []
-    targets = []
-    accuracy = torchmetrics.Accuracy()
-    for x, y in dataloader:
-        if laplace:
-            pred = model(x)
-            py.append(pred)
-            targets.append(y)
-            accuracy(pred, y)
-        else:
-            pred = torch.softmax(model(x), dim=-1)
-            py.append(pred)
-            targets.append(y)
-            accuracy(pred, y)
-
-    return torch.cat(py).cpu(), torch.cat(targets).cpu(), accuracy.compute()
-
-
-def run(epochs=1, lr=3e-4, batch_size=64):
-
+def run(epochs=20, lr=3e-4, batch_size=64, hessian='diag'):
     data = CIFAR10DataModule("./data", batch_size=batch_size, num_workers=4, normalize=True)
     data.setup()
 
@@ -48,24 +28,84 @@ def run(epochs=1, lr=3e-4, batch_size=64):
     )
     trainer.test(dataloaders=data.test_dataloader())
 
+    # Softmax plotting
+    probs, labels, accuracy = predict(data.test_dataloader(), model, laplace=False)
+    print('[Softmax] Plotting')
+    plot_calibration(labels, probs, accuracy, title='Softmax calibration curve')
+
+    print('[Laplace] Start')
+    # Laplace post-hoc train
     la = Laplace(model, "classification",
                  subset_of_weights="last_layer",
-                 hessian_structure="diag")
+                 hessian_structure=hessian)
+    print('[Laplace] Training')
     la.fit(data.train_dataloader())
-    # la.optimize_prior_precision(method='CV', val_loader=data.val_dataloader())
-    # accuracy = test_model(data.dataset_train, data.dataset_test, la, "cpu")["precision_at_1"]
+
+    print('[Laplace] Optimizing')
+    la.optimize_prior_precision(method='marglik', val_loader=data.val_dataloader())
+
+    # Laplace plotting
     probs, labels, accuracy = predict(data.test_dataloader(), la, laplace=True)
-    accs, pred_probs, ece = calc_ece(probs, labels, 10)
-    print(accs, pred_probs, ece)
-    fig, ax = plt.subplots()
-    ax.plot(pred_probs.numpy(), accs.numpy())
-    ax.plot()
-    print(accuracy)
+    print('[Laplace] Plotting')
+    plot_calibration(labels, probs, accuracy, title=f'Laplace calibration curve ({hessian=})')
+
+
+@torch.no_grad()
+def predict(dataloader, model, laplace=False):
+    py = []
+    targets = []
+    accuracy = torchmetrics.Accuracy()
+    for x, y in dataloader:
+        if laplace:
+            pred = model(x, pred_type='glm', link_approx='probit')
+            py.append(pred)
+            targets.append(y)
+            accuracy(pred, y)
+        else:
+            pred = torch.softmax(model(x), dim=-1)
+            py.append(pred)
+            targets.append(y)
+            accuracy(pred, y)
+
+    return torch.cat(py).cpu(), torch.cat(targets).cpu(), accuracy.compute()
+
+
+def plot_calibration(labels, probs, accuracy, title='ECE calibration'):
+    bins = 10
+    accs, pred_probs, ece = calc_ece(probs, labels, bins)
+    ece = ece.cpu().detach().numpy() * 100
+
+    fig, ax = plt.subplots(ncols=2, figsize=(10, 6))
+
+    ax[0].plot(pred_probs.numpy(), accs.numpy(), label='Actual')
+    ax[0].plot(np.linspace(0, 1), np.linspace(0, 1), label='Identity')
+    ax[0].set(
+        xlim=[0, 1],
+        ylim=[0, 1],
+        ylabel='Accuracy',
+        xlabel='Confidence',
+        title=title
+    )
+    ax[0].text(x=0.1, y=0.75, s=f"{ece=:.2f}%\n{accuracy=:.2f}",
+               bbox={'facecolor': 'blue', 'alpha': 0.25, 'pad': 5})
+
+    ax[0].legend()
+
+    conf, preds = torch.max(probs, dim=1)
+
+    ax[1].hist(conf.numpy(), bins='scott')
+    ax[1].set(
+        xlabel="Confidence",
+        ylabel="Frequency",
+        title='Histogram of confidence'
+    )
+
+    fig.savefig(f'{title}.png')
 
 
 def calc_ece(probs, labels, num_bins):
     maxp, predictions = probs.max(-1, keepdims=True)
-    boundaries = torch.linspace(0, 1, num_bins+1)
+    boundaries = torch.linspace(0, 1, num_bins + 1)
     lower_bound, upper_bound = boundaries[:-1], boundaries[1:]
     in_bin = maxp.ge(lower_bound).logical_and(maxp.lt(upper_bound)).float()
     bin_sizes = in_bin.sum(0)
@@ -80,5 +120,4 @@ def calc_ece(probs, labels, num_bins):
 
 
 if __name__ == "__main__":
-    fire.Fire(run())
-
+    fire.Fire(run)
