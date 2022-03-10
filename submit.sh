@@ -5,7 +5,7 @@
 #BSUB -q gpuv100
 
 ### -- set the job Name --
-#BSUB -J metric-laplace-learning
+#BSUB -J metric-learning
 
 ### -- ask for number of cores (default: 1) --
 #BSUB -n 4
@@ -26,7 +26,7 @@
 ### -- set the email address --
 # please uncomment the following line and put in your e-mail address,
 # if you want to receive e-mail notifications on a non-default address
-##BSUB -u moe.simon@gmail.com
+#BSUB -u moe.simon@gmail.com
 ### -- send notification at start --
 #BSUB -B
 ### -- send notification at completion--
@@ -34,8 +34,8 @@
 ### -- Specify the output and error file. %J is the job-id --
 ### -- -o and -e mean append, -oo and -eo mean overwrite --
 
-#BSUB -o runs/runid-%J.out
-#BSUB -e runs/runid-%J.err
+#BSUB -o logs/runid-%J.out
+#BSUB -e logs/runid-%J.err
 # -- end of LSF options --
 
 # Load the cuda module
@@ -49,5 +49,5 @@ cd /zhome/e2/5/127625/PycharmProjects/metric-laplace-approximation
 source venv/bin/activate
 
 # Run test
-python3 -m src.main
+python3 -m src.models.train --name="metric-triplet" --epochs=100 --freq=20
 

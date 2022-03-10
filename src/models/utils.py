@@ -16,7 +16,7 @@ def test_model(train_set, test_set, model, data_device):
     """
     Compute accuracy using AccuracyCalculator from pytorch-metric-learning
     """
-    accuracy_calculator = AccuracyCalculator(include=("precision_at_1",), k=1)
+    accuracy_calculator = AccuracyCalculator(include=('mean_average_precision', 'precision_at_1'), k=50)
 
     train_embeddings, train_labels = get_all_embeddings(train_set, model, data_device)
     test_embeddings, test_labels = get_all_embeddings(test_set, model, data_device)
