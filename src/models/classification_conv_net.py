@@ -3,6 +3,7 @@ import torch
 from torch import nn
 from torch.nn import CrossEntropyLoss
 import torchmetrics
+from torch.nn import functional as F
 
 
 class ConvNet(pl.LightningModule):
@@ -26,11 +27,11 @@ class ConvNet(pl.LightningModule):
         self.model = nn.Sequential(
             nn.Conv2d(3, 64, 5, 1),
             nn.ReLU(),
-            nn.AvgPool2d(kernel_size=2, stride=2),
+            nn.MaxPool2d(2),
             nn.BatchNorm2d(64),
             nn.Conv2d(64, 128, 5, 1),
             nn.ReLU(),
-            nn.AvgPool2d(kernel_size=2, stride=2),
+            nn.MaxPool2d(2),
             nn.BatchNorm2d(128),
             nn.Conv2d(128, 256, 5, 1),
             nn.ReLU(),
