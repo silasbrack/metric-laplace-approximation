@@ -11,11 +11,11 @@ from src.models.metric_learning import Lite
 
 def run(loss='contrastive',
         miner='multisimilarity',
-        epochs=0,
+        epochs=10,
         freq=2,
         lr=3e-4,
         batch_size=64,
-        name='testing'):
+        name='diff_models'):
 
     model = ConvNet()
 

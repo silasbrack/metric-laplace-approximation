@@ -6,14 +6,18 @@ class ConvNet(nn.Module):
         super().__init__()
 
         self.model = nn.Sequential(
-            nn.Conv2d(3, 16, 3, 1),
+            nn.Conv2d(3, 64, 5, 1),
             nn.ReLU(),
-            nn.Conv2d(16, 32, 3, 1),
+            nn.AvgPool2d(kernel_size=2,stride=2),
+            nn.Conv2d(64, 128, 5, 1),
             nn.ReLU(),
-            nn.MaxPool2d(2),
-            nn.Dropout2d(0.25),
+            nn.AvgPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(128,256, 5, 1),
+            nn.ReLU(),
+            # nn.AvgPool2d(kernel_size=2,stride=2),
+            # nn.Dropout2d(0.25),
             nn.Flatten(),
-            nn.Linear(6272, 128),
+            nn.Linear(256,64),
         )
 
     def forward(self, x):
