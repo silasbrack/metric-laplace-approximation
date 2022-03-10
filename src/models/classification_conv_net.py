@@ -11,27 +11,34 @@ class ConvNet(pl.LightningModule):
 
         self.lr = lr
 
-        self.model = nn.Sequential(
-            nn.Conv2d(3, 16, 3, 1),
-            nn.ReLU(),
-            nn.Conv2d(16, 32, 3, 1),
-            nn.ReLU(),
-            nn.MaxPool2d(2),
-            nn.Dropout2d(0.25),
-            nn.Flatten(),
-            nn.Linear(6272, 128),
-            nn.Linear(128, 10),
-        )
         # self.model = nn.Sequential(
+        #     nn.Conv2d(3, 16, 3, 1),
+        #     nn.ReLU(),
+        #     nn.Conv2d(16, 32, 3, 1),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(2),
+        #     nn.Dropout2d(0.25),
         #     nn.Flatten(),
-        #     nn.Linear(3*32*32, 64),
-        #     nn.ReLU(),
-        #     nn.Dropout(0.1),
-        #     nn.Linear(64, 64),
-        #     nn.ReLU(),
-        #     nn.Dropout(0.1),
-        #     nn.Linear(64, 10),
+        #     nn.Linear(6272, 128),
+        #     nn.Linear(128, 10),
         # )
+
+        self.model = nn.Sequential(
+            nn.Conv2d(3, 64, 5, 1),
+            nn.ReLU(),
+            nn.AvgPool2d(kernel_size=2, stride=2),
+            nn.BatchNorm2d(64),
+            nn.Conv2d(64, 128, 5, 1),
+            nn.ReLU(),
+            nn.AvgPool2d(kernel_size=2, stride=2),
+            nn.BatchNorm2d(128),
+            nn.Conv2d(128, 256, 5, 1),
+            nn.ReLU(),
+            nn.BatchNorm2d(256),
+            nn.Flatten(),
+            nn.Linear(256, 10),
+        )
+
         self.loss = CrossEntropyLoss()
         self.test_accuracy = torchmetrics.Accuracy()
         self.val_accuracy = torchmetrics.Accuracy()
@@ -70,5 +77,5 @@ class ConvNet(pl.LightningModule):
         self.log('test_accuracy', self.test_accuracy, prog_bar=True)
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=0.03)
         return optimizer
