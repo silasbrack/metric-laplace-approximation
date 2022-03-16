@@ -1,4 +1,9 @@
 import logging
+import warnings
+
+from src.models.MetricLite import MetricLite
+
+warnings.filterwarnings('ignore')
 
 import fire
 import torch
@@ -6,7 +11,7 @@ from pytorch_metric_learning import losses, miners
 from torch import optim
 
 from src.models import ConvNet
-from src.models.metric_learning import Lite
+from src.models.MetricLaplace import MetricLaplace
 
 
 def run(loss='contrastive',
@@ -48,7 +53,7 @@ def run(loss='contrastive',
 
     logging.info(f'Parameters: {params}')
 
-    lite = Lite(gpus=1 if torch.cuda.is_available() else 0)
+    lite = MetricLite(gpus=1 if torch.cuda.is_available() else 0)
 
     # Init
     lite.init(name=name,
@@ -61,12 +66,20 @@ def run(loss='contrastive',
               )
 
     # Training loop
-    lite.train(epochs=epochs,
-               freq=freq,
-               )
+    # lite.train(epochs=epochs,
+    #            freq=freq,
+    #            )
 
     # Testing
-    lite.test()
+    # lite.test()
+
+    # Log hyperparams
+    # lite.log_hyperparams()
+
+    # Laplace
+    la = MetricLaplace(lite)
+
+    la.train_laplace()
 
 
 if __name__ == "__main__":

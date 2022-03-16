@@ -49,5 +49,5 @@ cd /zhome/e2/5/127625/PycharmProjects/metric-laplace-approximation
 source venv/bin/activate
 
 # Run test
-python3 -m src.models.train_laplace --epochs=20 --hessian="full"
+python3 -m src.models.train_laplace --epochs=20 --hessian="diag"
 

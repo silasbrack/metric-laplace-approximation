@@ -28,7 +28,7 @@ def get_time():
     return datetime.datetime.now().strftime('%Y-%m-%dT%H%M%S')
 
 
-class Lite(LightningLite):
+class MetricLite(LightningLite):
     def init(self, name, model, loss_fn, miner, batch_size, optimizer, load_dir):
         # LOGGING
         self.name = name
@@ -94,7 +94,6 @@ class Lite(LightningLite):
                 )
 
         logging.info(f'Finished training @ epoch: {self.epoch}')
-        self.log_hyperparams()
         return self.model
 
     def validate(self):
