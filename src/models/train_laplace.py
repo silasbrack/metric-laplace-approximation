@@ -1,6 +1,9 @@
+import logging
+
 import fire
 import numpy as np
 import pytorch_lightning as pl
+from pytorch_lightning import loggers
 import torch
 import torchmetrics
 from laplace import Laplace
@@ -15,11 +18,13 @@ def run(epochs=20, lr=3e-4, batch_size=64, hessian='diag'):
     data.setup()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    gpus = 1 if torch.cuda.is_available() else 0
     model = ConvNet(lr=lr).to(device)
 
     trainer = pl.Trainer(
-        gpus=1,
+        gpus=gpus,
         max_epochs=epochs,
+        logger=loggers.TensorBoardLogger("logs/"),
     )
     trainer.fit(
         model,
@@ -28,26 +33,28 @@ def run(epochs=20, lr=3e-4, batch_size=64, hessian='diag'):
     )
     trainer.test(dataloaders=data.test_dataloader())
 
-    # Softmax plotting
     probs, labels, accuracy = predict(data.test_dataloader(), model, laplace=False)
-    print('[Softmax] Plotting')
+    logging.info('[Softmax] Plotting')
     plot_calibration(labels, probs, accuracy, title='Softmax calibration curve')
 
-    print('[Laplace] Start')
     # Laplace post-hoc train
     la = Laplace(model, "classification",
                  subset_of_weights="last_layer",
                  hessian_structure=hessian)
-    print('[Laplace] Training')
+    logging.info('[Laplace] Fitting Hessian')
     la.fit(data.train_dataloader())
 
-    print('[Laplace] Optimizing')
-    la.optimize_prior_precision(method='marglik', val_loader=data.val_dataloader())
+    probs, labels, accuracy = predict(data.test_dataloader(), la, laplace=True)
+    logging.info('[Laplace] Plotting')
+    plot_calibration(labels, probs, accuracy, title=f'Laplace calibration curve ({hessian=})')
 
     # Laplace plotting
+    logging.info('[Laplace] Optimizing')
+    la.optimize_prior_precision(method='marglik', val_loader=data.val_dataloader())
+
     probs, labels, accuracy = predict(data.test_dataloader(), la, laplace=True)
-    print('[Laplace] Plotting')
-    plot_calibration(labels, probs, accuracy, title=f'Laplace calibration curve ({hessian=})')
+    logging.info('[Laplace] Plotting')
+    plot_calibration(labels, probs, accuracy, title=f'Optimized Laplace calibration curve ({hessian=})')
 
 
 @torch.no_grad()

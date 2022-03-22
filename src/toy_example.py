@@ -63,18 +63,36 @@ for hessian_structure in ["diag", "full"]:
         subset_of_weights="all",
     )
     la.fit(dataloader)
-    la.optimize_prior_precision()
 
     Js, f = jacobians(x, model, output_size=num_outputs)
     assert Js.shape == (num_observations, num_outputs, num_params)
 
-    Hs = torch.einsum("nij,nkl->njl", Js, Js)
-    assert Hs.shape == (num_observations, num_params, num_params)
-
     if hessian_structure == "diag":
-        # Hs = torch.einsum("nij,nij->nj", Js, Js)
-        Hs = torch.einsum("nii->ni", Hs)
+        Hs = torch.einsum("nij,nij->nj", Js, Js)
         assert Hs.shape == (num_observations, num_params)
+    elif hessian_structure == "full":
+        Hs = torch.einsum("nij,nkl->njl", Js, Js)
+        assert Hs.shape == (num_observations, num_params, num_params)
+    else:
+        raise NotImplementedError
 
     # Hs.sum(dim=0), since we sum over the observations (that's what they seem to do)
-    torch.testing.assert_close(la.H, Hs.sum(dim=0), rtol=1e-5, atol=0.)  # Less than 0.001% off
+    Hs = Hs.sum(dim=0)
+
+    torch.testing.assert_close(la.H, Hs, rtol=1e-5, atol=0.)  # Less than 0.001% off
+
+    # Prior precision is one.
+    if hessian_structure == "diag":
+        prior_precision = torch.ones((num_params,))  # Prior precision is one.
+        precision = Hs + prior_precision
+        covariance_matrix = 1 / precision
+        torch.testing.assert_close(la.posterior_variance, covariance_matrix, rtol=1e-5, atol=0.)
+    elif hessian_structure == "full":
+        prior_precision = torch.eye(num_params)
+        precision = Hs + prior_precision
+        covariance_matrix = torch.inverse(precision)
+        torch.testing.assert_close(la.posterior_covariance, covariance_matrix, rtol=1e-1, atol=0.)
+    else:
+        raise NotImplementedError
+
+

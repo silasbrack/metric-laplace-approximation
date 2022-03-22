@@ -29,10 +29,12 @@ def get_time():
 
 
 class MetricLite(LightningLite):
-    def init(self, name, model, loss_fn, miner, batch_size, optimizer, load_dir):
+    def init(self, name, model, loss_fn, miner, batch_size, optimizer, load_dir, to_visualize=False):
         # LOGGING
         self.name = name
         self.writer = setup_logger(name)
+
+        self.to_visualize = to_visualize
 
         # Data
         self.batch_size = batch_size
@@ -119,7 +121,8 @@ class MetricLite(LightningLite):
         self.writer.add_scalar("val_acc", accuracy["precision_at_1"], self.epoch)
         self.writer.add_scalar("val_map", accuracy['mean_average_precision'], self.epoch)
 
-        self.visualize(self.val_loader, self.val_loader.dataset.dataset.class_to_idx)
+        if self.to_visualize:
+            self.visualize(self.val_loader, self.val_loader.dataset.dataset.class_to_idx)
 
     def test(self):
         logging.info(f'Testing @ epoch: {self.epoch}')
@@ -131,7 +134,8 @@ class MetricLite(LightningLite):
         self.writer.add_scalar("test_acc", accuracy["precision_at_1"], self.epoch)
         self.writer.add_scalar("test_map", accuracy['mean_average_precision'], self.epoch)
 
-        self.visualize(self.test_loader, self.test_loader.dataset.class_to_idx)
+        if self.to_visualize:
+            self.visualize(self.test_loader, self.test_loader.dataset.class_to_idx)
 
     def visualize(self, dataloader, class_to_idx):
         logging.info(f'Visualizing @ epoch: {self.epoch}')
@@ -159,9 +163,7 @@ class MetricLite(LightningLite):
 
         mapper = umap.UMAP().fit(x)
         umap.plot.points(mapper, labels=labels, ax=ax)
-
         self.writer.add_figure('UMAP', fig, self.epoch)
-
         logging.info('Finished UMAP')
 
     def setup_data(self, batch_size):

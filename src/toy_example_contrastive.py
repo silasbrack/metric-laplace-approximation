@@ -1,6 +1,8 @@
 import torch
 from asdfghjkl.gradient import batch_gradient
 from laplace.curvature.asdl import _get_batch_grad
+from pl_bolts.datamodules import CIFAR10DataModule
+from pytorch_metric_learning import miners
 from torch import nn
 
 
@@ -33,14 +35,17 @@ def jacobians(x, model, output_size=784):
 
 
 class SiameseModel(nn.Module):
-    def __init__(self, latent_size, input_size):
+    def __init__(self, latent_size):
         super().__init__()
         self.model = nn.Sequential(
-            nn.Linear(input_size, 16),
+            nn.Conv2d(3, 16, 3, 1),
             nn.ReLU(),
-            nn.Linear(16, 16),
+            nn.Conv2d(16, 32, 3, 1),
             nn.ReLU(),
-            nn.Linear(16, latent_size)
+            nn.MaxPool2d(2),
+            nn.Dropout2d(0.25),
+            nn.Flatten(),
+            nn.Linear(6272, latent_size),
         )
 
     def forward(self, x):
@@ -51,31 +56,49 @@ class SiameseModel(nn.Module):
         return torch.cat((z1, z2), dim=1)
 
 
-num_observations = 1000
-input_size = 1
+batch_size = 128
+# input_size = 1
 latent_size = 3
 
 # For contrastive loss, we give one pair at a time, so we have 2 outputs from our model, or 2 inputs to our loss.
 num_outputs = 2
-x = torch.rand((num_observations, num_outputs, input_size)).float()
-y = torch.randint(low=0, high=2, size=(num_observations,))  # 1 if positive pair, 0 if negative pair
 
-model = SiameseModel(latent_size, input_size)
+model = SiameseModel(latent_size)
 num_params = sum(p.numel() for p in model.parameters())
 
+miner = miners.MultiSimilarityMiner()
+
+data = CIFAR10DataModule("./data", batch_size=batch_size, num_workers=0, normalize=True)
+data.setup()
+
+x, y = next(iter(data.train_dataloader()))
+x = torch.stack((x, x), dim=1)
+y = torch.randint(low=0, high=2, size=(batch_size,))
+output = model(x)
+
 Js, f = jacobians(x, model, output_size=num_outputs*latent_size)
-assert Js.shape == (num_observations, num_outputs*latent_size, num_params)
-assert f.shape == (num_observations, num_outputs*latent_size)
+assert Js.shape == (batch_size, num_outputs*latent_size, num_params)
+assert f.shape == (batch_size, num_outputs*latent_size)
 
 Jz1 = Js[:, :3, :]
 Jz2 = Js[:, 3:, :]
-# Hs = Jz1.T @ Jz1 + Jz2.T @ Jz2 - 2 * (Jz1.T @ Jz2 + Jz2.T @ Jz1)
-Hs = torch.einsum("nij,nkl->njl", Jz1, Jz1) + \
-     torch.einsum("nij,nkl->njl", Jz2, Jz2) - \
+
+Hs = torch.einsum("nij,nij->nj", Jz1, Jz1) + \
+     torch.einsum("nij,nij->nj", Jz2, Jz2) - \
      2 * (
-         torch.einsum("nij,nkl->njl", Jz1, Jz2) +
-         torch.einsum("nij,nkl->njl", Jz2, Jz1)
+         torch.einsum("nij,nij->nj", Jz1, Jz2) +
+         torch.einsum("nij,nij->nj", Jz2, Jz1)
      )
+assert Hs.shape == (batch_size, num_params)
+
+# # FULL RANK
+# # Hs = Jz1.T @ Jz1 + Jz2.T @ Jz2 - 2 * (Jz1.T @ Jz2 + Jz2.T @ Jz1)
+# Hs = torch.einsum("nij,nkl->njl", Jz1, Jz1) + \
+#      torch.einsum("nij,nkl->njl", Jz2, Jz2) - \
+#      2 * (
+#          torch.einsum("nij,nkl->njl", Jz1, Jz2) +
+#          torch.einsum("nij,nkl->njl", Jz2, Jz1)
+#      )
 
 # L = y * ||z_1 - z_2||^2 + (1 - y) max(0, m - ||z_1 - z_2||^2)
 # The Hessian is equal to what we calculated, except when we have:
@@ -87,9 +110,12 @@ mask = torch.logical_and(
     m - torch.norm(f, dim=1) < 0
 )
 # We want to set each [num_params x num_params] Hessian to 0 for these observations
-mask = mask.view(-1, 1, 1).expand(num_observations, num_params, num_params)
+mask = mask.view(-1, 1).expand(batch_size, num_params)
 Hs = Hs.masked_fill_(mask, 0.)
 
-assert Hs.shape == (num_observations, num_params, num_params)
-Hs_diag = torch.einsum("nii->ni", Hs)
-assert Hs_diag.shape == (num_observations, num_params)
+Hs = Hs.sum(dim=0)
+
+prior_precision = torch.ones((num_params,))  # Prior precision is one.
+precision = Hs + prior_precision
+covariance_matrix = 1 / precision
+assert covariance_matrix.shape == (num_params,)
