@@ -6,8 +6,9 @@ from pytorch_metric_learning.utils import loss_and_miner_utils as lmu
 
 from src.models.manual_hessian import ContrastiveHessianCalculator
 from src.models.metric_diag_laplace import MetricDiagLaplace
+import pickle
 
-batch_size = 32
+batch_size = 8
 latent_size = 3
 
 model = nn.Sequential(
@@ -47,4 +48,67 @@ la = MetricDiagLaplace(
     # subset_of_weights="last_layer",
     # hessian_structure="diag"
 )
+
 la.fit(data.train_dataloader())
+
+# with open('models/laplace_metric.pkl', 'rb') as file:
+    # la = pickle.load(file)
+
+print('Optimize')
+la.optimize_prior_precision(method='marglik', val_loader=data.val_dataloader())
+
+with open('models/laplace_metric.pkl', 'wb') as file:
+    pickle.dump(la, file)
+    
+predictions = la(next(data.test_dataloader())[0], pred_type='glm', link_approx='probit')
+print(predictions)
+print(la)
+
+def plot_latent_space_ood(z_mu, z_sigma):
+    # path, z_mu, z_sigma, labels, ood_z_mu, ood_z_sigma, ood_labels
+# ):
+
+    import numpy as np 
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Ellipse
+    # max_ = np.max([np.max(z_sigma), np.max(ood_z_sigma)])
+    # min_ = np.min([np.min(z_sigma), np.min(ood_z_sigma)])
+    max_ = np.max(z_sigma)
+    min_ = np.min(z_sigma)
+    
+    # normalize sigma
+    z_sigma = ((z_sigma - min_) / (max_ - min_)) * 1
+    # ood_z_sigma = ((ood_z_sigma - min_) / (max_ - min_)) * 1
+
+    fig, ax = plt.subplots(1, 1, figsize=(9, 9))
+    for i, (z_mu_i, z_sigma_i) in enumerate(zip(z_mu, z_sigma)):
+
+        ax.scatter(z_mu_i[0], z_mu_i[1], color="b")
+        ellipse = Ellipse(
+            (z_mu_i[0], z_mu_i[1]),
+            width=z_sigma_i[0],
+            height=z_sigma_i[1],
+            fill=False,
+            edgecolor="blue",
+        )
+        ax.add_patch(ellipse)
+
+        if i > 500:
+            ax.scatter(z_mu_i[0], z_mu_i[1], color="b", label="ID")
+            break
+
+    # for i, (z_mu_i, z_sigma_i) in enumerate(zip(ood_z_mu, ood_z_sigma)):
+
+    #     ax.scatter(z_mu_i[0], z_mu_i[1], color="r")
+    #     ellipse = Ellipse(
+    #         (z_mu_i[0], z_mu_i[1]),
+    #         width=z_sigma_i[0],
+    #         height=z_sigma_i[1],
+    #         fill=False,
+    #         edgecolor="red",
+    #     )
+    #     ax.add_patch(ellipse)
+
+    #     if i > 500:
+    #         ax.scatter(z_mu_i[0], z_mu_i[1], color="r", label="OOD")
+    #         break
