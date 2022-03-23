@@ -66,7 +66,8 @@ class ContrastiveHessianCalculator(HessianCalculator):
         m = 0.1  # margin
         mask = torch.logical_and(
             (1 - y).bool(),
-            m - torch.norm(f1 - f2, dim=1) < 0
+            m - torch.einsum("no,no->n", f1 - f2, f1 - f2) < 0
+            # m - torch.pow(torch.linalg.norm(f1 - f2, dim=1), 2) < 0
         )
         if hessian_structure == "diag":
             Hs = torch.einsum("nij,nij->nj", Jz1, Jz1) + \
