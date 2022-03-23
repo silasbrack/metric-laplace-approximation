@@ -56,6 +56,24 @@ class SiameseModel(nn.Module):
         return torch.cat((z1, z2), dim=1)
 
 
+class SingleModel(nn.Module):
+    def __init__(self, latent_size):
+        super().__init__()
+        self.model = nn.Sequential(
+            nn.Conv2d(3, 16, 3, 1),
+            nn.ReLU(),
+            nn.Conv2d(16, 32, 3, 1),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+            nn.Dropout2d(0.25),
+            nn.Flatten(),
+            nn.Linear(6272, latent_size),
+        )
+
+    def forward(self, x):
+        return self.model(x)
+
+
 batch_size = 128
 # input_size = 1
 latent_size = 3
@@ -64,6 +82,7 @@ latent_size = 3
 num_outputs = 2
 
 model = SiameseModel(latent_size)
+singlemodel = SingleModel(latent_size)
 num_params = sum(p.numel() for p in model.parameters())
 
 miner = miners.MultiSimilarityMiner()
@@ -72,11 +91,10 @@ data = CIFAR10DataModule("./data", batch_size=batch_size, num_workers=0, normali
 data.setup()
 
 x, y = next(iter(data.train_dataloader()))
-x = torch.stack((x, x), dim=1)
+X = torch.stack((x, x), dim=1)
 y = torch.randint(low=0, high=2, size=(batch_size,))
-output = model(x)
 
-Js, f = jacobians(x, model, output_size=num_outputs*latent_size)
+Js, f = jacobians(X, model, output_size=num_outputs*latent_size)
 assert Js.shape == (batch_size, num_outputs*latent_size, num_params)
 assert f.shape == (batch_size, num_outputs*latent_size)
 
@@ -90,6 +108,19 @@ Hs = torch.einsum("nij,nij->nj", Jz1, Jz1) + \
          torch.einsum("nij,nij->nj", Jz2, Jz1)
      )
 assert Hs.shape == (batch_size, num_params)
+
+Jz1, _ = jacobians(x, singlemodel, output_size=latent_size)
+Jz2, _ = jacobians(x, singlemodel, output_size=latent_size)
+
+Hs_new = torch.einsum("nij,nij->nj", Jz1, Jz1) + \
+     torch.einsum("nij,nij->nj", Jz2, Jz2) - \
+     2 * (
+         torch.einsum("nij,nij->nj", Jz1, Jz2) +
+         torch.einsum("nij,nij->nj", Jz2, Jz1)
+     )
+assert Hs_new.shape == (batch_size, num_params)
+
+print()
 
 # # FULL RANK
 # # Hs = Jz1.T @ Jz1 + Jz2.T @ Jz2 - 2 * (Jz1.T @ Jz2 + Jz2.T @ Jz1)

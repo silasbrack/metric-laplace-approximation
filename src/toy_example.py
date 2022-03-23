@@ -5,6 +5,8 @@ from laplace.curvature.asdl import _get_batch_grad
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
+from src.models.manual_hessian import calculate_hessian
+
 
 def jacobians(x, model, output_size=784):
     """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\)
