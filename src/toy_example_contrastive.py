@@ -49,18 +49,18 @@ la = MetricDiagLaplace(
     # hessian_structure="diag"
 )
 
-la.fit(data.train_dataloader())
+# la.fit(data.train_dataloader())
 
-# with open('models/laplace_metric.pkl', 'rb') as file:
-    # la = pickle.load(file)
+with open('models/laplace_metric.pkl', 'rb') as file:
+    la = pickle.load(file)
 
 print('Optimize')
-la.optimize_prior_precision(method='marglik', val_loader=data.val_dataloader())
+# la.optimize_prior_precision(method='marglik', val_loader=data.val_dataloader())
 
-with open('models/laplace_metric.pkl', 'wb') as file:
-    pickle.dump(la, file)
+# with open('models/laplace_metric.pkl', 'wb') as file:
+#     pickle.dump(la, file)
     
-predictions = la(next(data.test_dataloader())[0], pred_type='glm', link_approx='probit')
+predictions = la(next(iter(data.test_dataloader()))[0], pred_type='glm', link_approx='probit')
 print(predictions)
 print(la)
 
