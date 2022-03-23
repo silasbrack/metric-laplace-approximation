@@ -4,6 +4,9 @@ from laplace.curvature.asdl import _get_batch_grad
 
 
 class HessianCalculator:
+    def calculate_hessian(self, *inputs, model, num_outputs, hessian_structure="diag", agg="sum"):
+        raise NotImplementedError
+
     def jacobians(self, x, model, output_size=784):
         """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\)
         using asdfghjkl's gradient per output dimension.

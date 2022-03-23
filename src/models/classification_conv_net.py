@@ -72,10 +72,10 @@ class ConvNet(pl.LightningModule):
         self.log("test_loss", loss, prog_bar=True)
 
     def validation_epoch_end(self, outs):
-        self.log('validation_accuracy', self.val_accuracy, prog_bar=True)
+        self.log('val_acc', self.val_accuracy, prog_bar=True)
 
     def test_epoch_end(self, outs):
-        self.log('test_accuracy', self.test_accuracy, prog_bar=True)
+        self.log('test_acc', self.test_accuracy, prog_bar=True)
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=0.03)

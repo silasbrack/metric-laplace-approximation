@@ -13,8 +13,8 @@ from pl_bolts.datamodules import CIFAR10DataModule
 from src.models.classification_conv_net import ConvNet
 
 
-def run(epochs=20, lr=3e-4, batch_size=64, hessian='diag'):
-    data = CIFAR10DataModule("./data", batch_size=batch_size, num_workers=4, normalize=True)
+def run(epochs=5, lr=3e-4, batch_size=64, hessian='diag'):
+    data = CIFAR10DataModule("./data", batch_size=batch_size, num_workers=0, normalize=True)
     data.setup()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -55,6 +55,10 @@ def run(epochs=20, lr=3e-4, batch_size=64, hessian='diag'):
     probs, labels, accuracy = predict(data.test_dataloader(), la, laplace=True)
     logging.info('[Laplace] Plotting')
     plot_calibration(labels, probs, accuracy, title=f'Optimized Laplace calibration curve ({hessian=})')
+
+    probs, labels, accuracy = predict(data.test_dataloader(), la, laplace=True)
+    logging.info('[Laplace] Plotting')
+    plot_calibration(labels, probs, accuracy, title=f'Manual Laplace calibration curve ({hessian=})')
 
 
 @torch.no_grad()

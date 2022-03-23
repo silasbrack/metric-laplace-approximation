@@ -16,7 +16,7 @@ from src.models import ConvNet
 def run(
     loss="contrastive",
     miner="multisimilarity",
-    epochs=0,
+    epochs=3,
     freq=2,
     lr=3e-4,
     batch_size=64,
