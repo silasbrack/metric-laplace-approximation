@@ -1,9 +1,9 @@
 import time
 
 import torch
-from laplace import Laplace
+from memory_profiler import memory_usage
 from torch import nn
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import TensorDataset, DataLoader
 
 from src.models.manual_hessian import RmseHessianCalculator
 
@@ -37,11 +37,11 @@ def compute_hessian(x, feature_maps, net, output_size, h_scale):
                     - feature_maps[k + 1] ** 2
                 )
                 tmp = torch.einsum("bnm,bnj,bjk->bmk", J_tanh, tmp, J_tanh)
-            elif isinstance(net[k], torch.nn.Tanh):
-                J_Tanh = torch.diag_embed(
+            elif isinstance(net[k], torch.nn.ReLU):
+                J_relu = torch.diag_embed(
                     (feature_maps[k] > 0).float()
                 )
-                tmp = torch.einsum("bnm,bnj,bjk->bmk", J_Tanh, tmp, J_Tanh)
+                tmp = torch.einsum("bnm,bnj,bjk->bmk", J_relu, tmp, J_relu)
 
             if k == 0:
                 break
@@ -62,83 +62,74 @@ def compute_hessian(x, feature_maps, net, output_size, h_scale):
 
 
 num_observations = 1000
-
 X = torch.rand((num_observations, 1)).float()
 y = 4.5 * torch.cos(2 * torch.pi * X + 1.5 * torch.pi) - \
     3 * torch.sin(4.3 * torch.pi * X + 0.3 * torch.pi) + \
     3.0 * X - 7.5
-
 dataset = TensorDataset(X, y)
 dataloader = DataLoader(dataset, batch_size=num_observations)
 x, y = next(iter(dataloader))
-dataloader = DataLoader(dataset, batch_size=32)
 
 model = nn.Sequential(
     nn.Linear(1, 16),
-    nn.Tanh(),
+    nn.ReLU(),
     nn.Linear(16, 16),
-    nn.Tanh(),
+    nn.ReLU(),
     nn.Linear(16, 32),
-    nn.Tanh(),
-    nn.Linear(32, 64),
-    nn.Tanh(),
-    nn.Linear(64, 32),
-    nn.Tanh(),
+    nn.ReLU(),
     nn.Linear(32, 16),
-    nn.Tanh(),
+    nn.ReLU(),
     nn.Linear(16, 16),
-    nn.Tanh(),
+    nn.ReLU(),
     nn.Linear(16, 1)
 )
-num_params = sum(p.numel() for p in model.parameters())
 
-for hessian_structure in ["diag"]:
-    la = Laplace(
-        model,
-        "regression",
-        hessian_structure=hessian_structure,
-        subset_of_weights="all",
-    )
-    t0 = time.perf_counter()
-    la.fit(dataloader)
-    elapsed_la = time.perf_counter() - t0
 
-    t0 = time.perf_counter()
-    Hs = RmseHessianCalculator().calculate_hessian(
-        dataloader,
+def row_wise_proc():
+    RmseHessianCalculator().calculate_hessian(
+        x,
         model=model,
         num_outputs=1,
-        hessian_structure=hessian_structure,
+        hessian_structure="diag",
     )
-    elapsed_rmse = time.perf_counter() - t0
-    torch.testing.assert_close(la.H, Hs, rtol=1e-4, atol=0.)  # Less than 0.01% off
 
-    activation = []
-    def get_activation():
-        def hook(model, input, output):
-            activation.append(output.detach())
-        return hook
-    for layer in model:
-        layer.register_forward_hook(get_activation())
-    output = model(x)
 
-    t0 = time.perf_counter()
-    Hs = compute_hessian(x, activation, model, output_size=1,
-                         h_scale=num_observations)
-    elapsed = time.perf_counter() - t0
+activation = []
+def get_activation():
+    def hook(model, input, output):
+        activation.append(output.detach())
+    return hook
+for layer in model:
+    layer.register_forward_hook(get_activation())
+output = model(x)
 
-    torch.testing.assert_close(la.H, Hs, rtol=1e-2, atol=0.)  # Less than 1% off
 
-    # Prior precision is one.
-    if hessian_structure == "diag":
-        prior_precision = torch.ones((num_params,))  # Prior precision is one.
-        precision = Hs + prior_precision
-        covariance_matrix = 1 / precision
-        torch.testing.assert_close(la.posterior_variance, covariance_matrix, rtol=1e-5, atol=0.)
-    elif hessian_structure == "full":
-        prior_precision = torch.eye(num_params)
-        precision = Hs + prior_precision
-        covariance_matrix = torch.inverse(precision)
-        torch.testing.assert_close(la.posterior_covariance, covariance_matrix, rtol=1e-1, atol=0.)
-    else:
-        raise NotImplementedError
+def layer_wise_proc():
+    compute_hessian(x, activation, model, 1, num_observations)
+
+t0 = time.perf_counter()
+mem_row_wise = memory_usage(
+    # proc=row_wise_proc,
+    proc=(
+        RmseHessianCalculator().calculate_hessian,
+        [x],
+        dict(model=model, num_outputs=1, hessian_structure="diag")
+    ),
+    # max_usage=True,
+    # timestamps=True,
+)
+wall_row_wise = time.perf_counter() - t0
+
+t0 = time.perf_counter()
+mem_layer_wise = memory_usage(
+    # proc=layer_wise_proc,
+    proc=(
+        compute_hessian,
+        [x, activation, model, 1, num_observations]
+    ),
+    # max_usage=True,
+    # timestamps=True,
+)
+wall_layer_wise = time.perf_counter() - t0
+
+print()

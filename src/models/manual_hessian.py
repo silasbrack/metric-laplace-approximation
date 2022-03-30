@@ -36,20 +36,22 @@ class HessianCalculator:
 
 
 class RmseHessianCalculator(HessianCalculator):
-    def calculate_hessian(self, *inputs, model, num_outputs, hessian_structure="diag", agg="sum"):
-        x = inputs[0]
-        Js, f = self.jacobians(x, model, output_size=num_outputs)
+    def calculate_hessian(self, loader, model, num_outputs, hessian_structure="diag", agg="sum"):
+        temp = []
+        for x, _ in loader:
+            Js, f = self.jacobians(x, model, output_size=num_outputs)
 
-        if hessian_structure == "diag":
-            Hs = torch.einsum("nij,nij->nj", Js, Js)
-        elif hessian_structure == "full":
-            Hs = torch.einsum("nij,nkl->njl", Js, Js)
-        else:
-            raise NotImplementedError
+            if hessian_structure == "diag":
+                Hs = torch.einsum("nij,nij->nj", Js, Js)
+            elif hessian_structure == "full":
+                Hs = torch.einsum("nij,nkl->njl", Js, Js)
+            else:
+                raise NotImplementedError
 
+            temp.append(Hs)
+        Hs = torch.cat(temp)
         if agg == "sum":
             Hs = Hs.sum(dim=0)
-
         return Hs
 
 
