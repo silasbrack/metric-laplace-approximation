@@ -4,6 +4,8 @@ import torch
 from laplace import Laplace
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
+from torch.distributions import Normal
+from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
 from src.models.manual_hessian import RmseHessianCalculator
 
@@ -78,14 +80,6 @@ model = nn.Sequential(
     nn.Tanh(),
     nn.Linear(16, 16),
     nn.Tanh(),
-    nn.Linear(16, 32),
-    nn.Tanh(),
-    nn.Linear(32, 64),
-    nn.Tanh(),
-    nn.Linear(64, 32),
-    nn.Tanh(),
-    nn.Linear(32, 16),
-    nn.Tanh(),
     nn.Linear(16, 16),
     nn.Tanh(),
     nn.Linear(16, 1)
@@ -93,25 +87,25 @@ model = nn.Sequential(
 num_params = sum(p.numel() for p in model.parameters())
 
 for hessian_structure in ["diag"]:
-    la = Laplace(
-        model,
-        "regression",
-        hessian_structure=hessian_structure,
-        subset_of_weights="all",
-    )
-    t0 = time.perf_counter()
-    la.fit(dataloader)
-    elapsed_la = time.perf_counter() - t0
-
-    t0 = time.perf_counter()
-    Hs = RmseHessianCalculator().calculate_hessian(
-        dataloader,
-        model=model,
-        num_outputs=1,
-        hessian_structure=hessian_structure,
-    )
-    elapsed_rmse = time.perf_counter() - t0
-    torch.testing.assert_close(la.H, Hs, rtol=1e-4, atol=0.)  # Less than 0.01% off
+    # la = Laplace(
+    #     model,
+    #     "regression",
+    #     hessian_structure=hessian_structure,
+    #     subset_of_weights="all",
+    # )
+    # t0 = time.perf_counter()
+    # la.fit(dataloader)
+    # elapsed_la = time.perf_counter() - t0
+    #
+    # t0 = time.perf_counter()
+    # Hs = RmseHessianCalculator().calculate_hessian(
+    #     dataloader,
+    #     model=model,
+    #     num_outputs=1,
+    #     hessian_structure=hessian_structure,
+    # )
+    # elapsed_rmse = time.perf_counter() - t0
+    # torch.testing.assert_close(la.H, Hs, rtol=1e-4, atol=0.)  # Less than 0.01% off
 
     activation = []
     def get_activation():
@@ -127,18 +121,45 @@ for hessian_structure in ["diag"]:
                          h_scale=num_observations)
     elapsed = time.perf_counter() - t0
 
-    torch.testing.assert_close(la.H, Hs, rtol=1e-2, atol=0.)  # Less than 1% off
+    # torch.testing.assert_close(la.H, Hs, rtol=1e-2, atol=0.)  # Less than 1% off
 
-    # Prior precision is one.
-    if hessian_structure == "diag":
-        prior_precision = torch.ones((num_params,))  # Prior precision is one.
-        precision = Hs + prior_precision
-        covariance_matrix = 1 / precision
-        torch.testing.assert_close(la.posterior_variance, covariance_matrix, rtol=1e-5, atol=0.)
-    elif hessian_structure == "full":
-        prior_precision = torch.eye(num_params)
-        precision = Hs + prior_precision
-        covariance_matrix = torch.inverse(precision)
-        torch.testing.assert_close(la.posterior_covariance, covariance_matrix, rtol=1e-1, atol=0.)
-    else:
-        raise NotImplementedError
+    mu_q = parameters_to_vector(model.parameters())
+
+    def sample(parameters, posterior_scale, n_samples=100):
+        n_params = len(parameters)
+        samples = torch.randn(n_samples, n_params, device="cpu")
+        samples = samples * posterior_scale.reshape(1, n_params)
+        return parameters.reshape(1, n_params) + samples
+
+    sigma_q = 1 / (Hs + 1e-6)
+
+    preds = []
+
+    samples = sample(mu_q, sigma_q, n_samples=100)
+    for net_sample in samples:
+        vector_to_parameters(net_sample, model.parameters())
+        batch_preds = []
+        for x, _ in dataloader:
+            pred = model(x)
+            batch_preds.append(pred)
+        preds.append(torch.cat(batch_preds, dim=0))
+    preds = torch.stack(preds)
+
+    means = preds.mean(dim=0)
+    vars = preds.var(dim=0)
+
+
+
+    # # Prior precision is one.
+    # if hessian_structure == "diag":
+    #     prior_precision = torch.ones((num_params,))  # Prior precision is one.
+    #     precision = Hs + prior_precision
+    #     covariance_matrix = 1 / precision
+    #     torch.testing.assert_close(la.posterior_variance, covariance_matrix, rtol=1e-5, atol=0.)
+    # elif hessian_structure == "full":
+    #     prior_precision = torch.eye(num_params)
+    #     precision = Hs + prior_precision
+    #     covariance_matrix = torch.inverse(precision)
+    #     torch.testing.assert_close(la.posterior_covariance, covariance_matrix, rtol=1e-1, atol=0.)
+    # else:
+    #     raise NotImplementedError

@@ -184,23 +184,24 @@ class MetricLite(LightningLite):
     def log_hyperparams(self):
         logging.info('Logging hyperparameters')
 
-        logging.info('Calculating train accuracy')
         train_accuracy = test_model(self.train_loader.dataset,
                                     self.train_loader.dataset,
                                     self.model,
                                     self.device)
+        logging.info(f'{train_accuracy=}')
 
-        logging.info('Calculating validation accuracy')
         val_accuracy = test_model(self.train_loader.dataset,
                                   self.val_loader.dataset,
                                   self.model,
                                   self.device)
+        logging.info(f'{val_accuracy=}')
 
         logging.info('Calculating test accuracy')
         test_accuracy = test_model(self.train_loader.dataset,
                                    self.test_loader.dataset,
                                    self.model,
                                    self.device)
+        logging.info(f'{test_accuracy=}')
 
         self.writer.add_hparams(
             hparam_dict={

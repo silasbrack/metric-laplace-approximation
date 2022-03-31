@@ -8,7 +8,7 @@ warnings.filterwarnings('ignore')
 import fire
 import torch
 from pytorch_metric_learning import losses, miners
-from torch import optim
+from torch import optim, nn
 
 from src.models import ConvNet
 
@@ -23,7 +23,17 @@ def run(
     name="testing",
 ):
 
-    model = ConvNet()
+    # model = ConvNet()
+    model = nn.Sequential(
+        nn.Flatten(),
+        nn.Linear(32*32*3, 32),
+        nn.ReLU(),
+        nn.Linear(32, 64),
+        nn.ReLU(),
+        nn.Linear(64, 32),
+        nn.ReLU(),
+        nn.Linear(32, 20),
+    )
 
     if loss == "contrastive":
         loss_fn = losses.ContrastiveLoss()
@@ -72,10 +82,12 @@ def run(
                freq=freq)
 
     # Testing
-    lite.test()
+    # lite.test()
 
     # Log hyperparams
-    lite.log_hyperparams()
+    # lite.log_hyperparams()
+
+    return lite
 
 
 if __name__ == "__main__":

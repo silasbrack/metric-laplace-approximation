@@ -1,3 +1,4 @@
+from builtins import breakpoint
 import time
 
 import matplotlib.pyplot as plt
@@ -164,24 +165,28 @@ if __name__ == "__main__":
         t0 = time.perf_counter()
         H = compute_hessian_laplace_redux(model, dataset)
         wall = time.perf_counter() - t0
+        breakpoint()
 
     if laplace_ours:
         t0 = time.perf_counter()
-        H_row = compute_hessian_ours(dataset, model)
-        wall_row = time.perf_counter() - t0
+        H_layer = compute_hessian_ours(dataset, model)
+        wall_layer = time.perf_counter() - t0
+        breakpoint()
 
     if laplace_row:
         calculator = RmseHessianCalculator()
 
         t0 = time.perf_counter()
-        H_layer = calculator.calculate_hessian(
+        H_row = calculator.calculate_hessian(
             dataset,
             model=model,
             num_outputs=1,
             hessian_structure="diag",
         )
-        wall_layer = time.perf_counter() - t0
+        wall_row = time.perf_counter() - t0
+        breakpoint()
 
+    breakpoint()
     err = (H - H_layer.numpy()) / H
     plt.plot(err, "-o")
     plt.show()
