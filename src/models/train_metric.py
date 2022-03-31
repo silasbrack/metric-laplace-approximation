@@ -24,16 +24,7 @@ def run(
 ):
 
     # model = ConvNet()
-    model = nn.Sequential(
-        nn.Flatten(),
-        nn.Linear(32*32*3, 32),
-        nn.ReLU(),
-        nn.Linear(32, 64),
-        nn.ReLU(),
-        nn.Linear(64, 32),
-        nn.ReLU(),
-        nn.Linear(32, 20),
-    )
+    model =
 
     if loss == "contrastive":
         loss_fn = losses.ContrastiveLoss()

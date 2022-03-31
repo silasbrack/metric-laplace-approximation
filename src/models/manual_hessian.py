@@ -39,30 +39,28 @@ class RmseHessianCalculator(HessianCalculator):
     def calculate_hessian(self, loader, model, num_outputs, hessian_structure="diag", agg="sum"):
         temp = []
         for x, _ in loader:
-            Js, f = self.jacobians(x, model, output_size=num_outputs)
-
-            if hessian_structure == "diag":
-                Hs = torch.einsum("nij,nij->nj", Js, Js)
-            elif hessian_structure == "full":
-                Hs = torch.einsum("nij,nkl->njl", Js, Js)
-            else:
-                raise NotImplementedError
-
+            Hs = self.calculate_hessian_batch(x, model, num_outputs, hessian_structure)
             temp.append(Hs)
         Hs = torch.cat(temp)
         if agg == "sum":
             Hs = Hs.sum(dim=0)
         return Hs
 
+    def calculate_hessian_batch(self, x, model, num_outputs, hessian_structure):
+        Js, f = self.jacobians(x, model, output_size=num_outputs)
+        if hessian_structure == "diag":
+            Hs = torch.einsum("nij,nij->nj", Js, Js)
+        elif hessian_structure == "full":
+            Hs = torch.einsum("nij,nkl->njl", Js, Js)
+        else:
+            raise NotImplementedError
+        return Hs
+
 
 class ContrastiveHessianCalculator(HessianCalculator):
-    def calculate_hessian(self, *inputs, model, num_outputs, hessian_structure="diag", agg="sum"):
-        x1 = inputs[0]
-        x2 = inputs[1]
+    def calculate_hessian_batch(self, x1, x2, y, model, num_outputs, hessian_structure="diag", agg="sum"):
         Jz1, f1 = self.jacobians(x1, model, output_size=num_outputs)
         Jz2, f2 = self.jacobians(x2, model, output_size=num_outputs)
-
-        y = inputs[2]
 
         # L = y * ||z_1 - z_2||^2 + (1 - y) max(0, m - ||z_1 - z_2||^2)
         # The Hessian is equal to Hs, except when we have:
