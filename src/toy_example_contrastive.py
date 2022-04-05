@@ -28,12 +28,12 @@ def run():
         elapsed_row = time.perf_counter() - t0
 
         t0 = time.perf_counter()
-        Hs_layer = lw.compute_hessian_contrastive_batch(x1, x2, y, model, latent_size)
+        Hs_layer = lw.compute_hessian_contrastive_batch(x1, x2, y, model.model, latent_size)
         elapsed_layer = time.perf_counter() - t0
 
-        # torch.testing.assert_close(Hs_layer, Hs_row, rtol=1e-2, atol=0.)  # Less than 1% off
         logging.info(f"{elapsed_row=}")
-        # logging.info(f"{elapsed_layer=}")
+        logging.info(f"{elapsed_layer=}")
+        torch.testing.assert_close(Hs_layer, Hs_row, rtol=1e-2, atol=0.)  # Less than 1% off
         break
 
 
