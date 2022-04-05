@@ -23,7 +23,9 @@ holoviews
 scikit-image
 colorcet
 
---extra-index-url https://download.pytorch.org/whl/cu113
+faiss-cpu
+
+--extra-index-url https://download.pytorch.org/whl/cpu
 torch
 torchvision
 torchaudio

@@ -49,11 +49,11 @@ def run():
     elapsed_la = time.perf_counter() - t0
 
     t0 = time.perf_counter()
-    Hs_row = rw.compute_hessian_rmse(dataloader, model, output_size, hessian_structure=hessian_structure)
+    Hs_row = rw.RmseHessianCalculator(hessian_structure).compute(dataloader, model, output_size)
     elapsed_row = time.perf_counter() - t0
 
     t0 = time.perf_counter()
-    Hs_layer = lw.compute_hessian_rmse(dataloader, model, output_size)
+    Hs_layer = lw.RmseHessianCalculator().compute(dataloader, model, output_size)
     elapsed_layer = time.perf_counter() - t0
 
     logging.info(f"{elapsed_la=}")
