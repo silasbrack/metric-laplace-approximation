@@ -145,24 +145,21 @@ class ContrastiveHessianCalculator(HessianCalculator):
                 #     tmp3 = torch.zeros((bs, model[k-1].weight.shape[0],
                 #     model[k-1].weight.shape[0]))
 
+                # Calculate Hessian for linear layers (since they have
+                # parameters)
                 if isinstance(model[k], torch.nn.Linear):
-                    h1 = torch.einsum("bii,bj,bj->bij", tmp1, feature_maps1[k],
-                                      feature_maps1[k]).view(bs, -1)
-                    h2 = torch.einsum("bii,bj,bj->bij", tmp2, feature_maps2[k],
-                                      feature_maps2[k]).view(bs, -1)
-                    h3 = torch.einsum("bii,bj,bj->bij", tmp3, feature_maps1[k],
-                                      feature_maps2[k]).view(bs, -1)
+                    diag_elements1 = torch.einsum("bii->bi", tmp1)
+                    diag_elements2 = torch.einsum("bii->bi", tmp2)
+                    diag_elements3 = torch.einsum("bii->bi", tmp3)
+                    h1 = torch.einsum("bi,bj,bj->bij", diag_elements1, feature_maps1[k], feature_maps1[k]).view(bs, -1)
+                    h2 = torch.einsum("bi,bj,bj->bij", diag_elements2, feature_maps2[k], feature_maps2[k]).view(bs, -1)
+                    h3 = torch.einsum("bi,bj,bj->bij", diag_elements3, feature_maps1[k], feature_maps2[k]).view(bs, -1)
                     if model[k].bias is not None:
-                        h1 = torch.cat([h1, torch.einsum("bii->bi", tmp1)],
-                                       dim=1)
-                        h2 = torch.cat([h2, torch.einsum("bii->bi", tmp2)],
-                                       dim=1)
-                        h3 = torch.cat([h3, torch.einsum("bii->bi", tmp3)],
-                                       dim=1)
+                        h1 = torch.cat([h1, diag_elements1], dim=1)
+                        h2 = torch.cat([h2, diag_elements2], dim=1)
+                        h3 = torch.cat([h3, diag_elements3], dim=1)
 
                     h_k = h1 + h2 - 4 * h3
-                    # h_k = torch.zeros((bs, model[k].weight.shape[0],
-                    # model[k].weight.shape[1] + 1)).view(bs, -1)
 
                     H = [h_k] + H
 
