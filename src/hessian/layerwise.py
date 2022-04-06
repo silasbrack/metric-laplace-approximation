@@ -106,9 +106,6 @@ class RmseHessianCalculator(HessianCalculator):
 
 
 class ContrastiveHessianCalculator(HessianCalculator):
-    # def compute_batch(self, model, output_size, x1, x2, y, *args, **kwargs):
-    #     return compute_hessian_contrastive_batch(x1, x2, y, model, output_size)
-
     def compute_batch(self, model, output_size, x1, x2, y, *args, **kwargs):
         self.feature_maps = []
         model(x1)
@@ -130,23 +127,7 @@ class ContrastiveHessianCalculator(HessianCalculator):
         H = []
         with torch.no_grad():
             for k in range(len(model) - 1, -1, -1):
-                # if isinstance(model[k], torch.nn.Linear):
-                #     tmp1 = torch.zeros((bs, model[k].weight.shape[0],
-                #     model[k].weight.shape[0]))
-                #     tmp2 = torch.zeros((bs, model[k].weight.shape[0],
-                #     model[k].weight.shape[0]))
-                #     tmp3 = torch.zeros((bs, model[k].weight.shape[0],
-                #     model[k].weight.shape[0]))
-                # else:
-                #     tmp1 = torch.zeros((bs, model[k-1].weight.shape[0],
-                #     model[k-1].weight.shape[0]))
-                #     tmp2 = torch.zeros((bs, model[k-1].weight.shape[0],
-                #     model[k-1].weight.shape[0]))
-                #     tmp3 = torch.zeros((bs, model[k-1].weight.shape[0],
-                #     model[k-1].weight.shape[0]))
-
-                # Calculate Hessian for linear layers (since they have
-                # parameters)
+                # Calculate Hessian for linear layers (since they have parameters)
                 if isinstance(model[k], torch.nn.Linear):
                     diag_elements1 = torch.einsum("bii->bi", tmp1)
                     diag_elements2 = torch.einsum("bii->bi", tmp2)
@@ -188,13 +169,11 @@ class ContrastiveHessianCalculator(HessianCalculator):
                 else:
                     raise NotImplementedError
 
+                # Calculate the product of the Jacobians
                 # TODO: make more efficent by using row vectors
-                # Right now this is 96% of our runtime
-                tmp1 = torch.einsum("bnm,bnj,bjk->bmk", jacobian_x1, tmp1,
-                                    jacobian_x1)
-                tmp2 = torch.einsum("bnm,bnj,bjk->bmk", jacobian_x2, tmp2,
-                                    jacobian_x2)
-                tmp3 = torch.einsum("bnm,bnj,bjk->bmk", jacobian_x1, tmp3,
-                                    jacobian_x2)
+                # Right now this is 96-97% of our runtime
+                tmp1 = torch.einsum("bnm,bnj,bjk->bmk", jacobian_x1, tmp1, jacobian_x1)
+                tmp2 = torch.einsum("bnm,bnj,bjk->bmk", jacobian_x2, tmp2, jacobian_x2)
+                tmp3 = torch.einsum("bnm,bnj,bjk->bmk", jacobian_x1, tmp3, jacobian_x2)
 
         return torch.cat(H, dim=1).sum(dim=0)

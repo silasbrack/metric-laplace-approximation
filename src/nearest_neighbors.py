@@ -1,6 +1,7 @@
 import faiss
 import torch
 from torch.utils.data import TensorDataset, DataLoader
+import faiss.contrib.torch_utils
 
 
 def get_nearest_latent_neighbors(dataset, model, latent_size, num_neighbors):
