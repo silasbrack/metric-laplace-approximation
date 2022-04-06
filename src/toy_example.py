@@ -20,7 +20,7 @@ def run():
     y = 4.5 * torch.cos(2 * torch.pi * X + 1.5 * torch.pi) - \
         3 * torch.sin(4.3 * torch.pi * X + 0.3 * torch.pi) + \
         3.0 * X - 7.5
-    y = y[:, 0].squeeze()
+    y = y[:, 0].unsqueeze(-1)
     dataset = TensorDataset(X, y)
     dataloader = DataLoader(dataset, batch_size=32)
 
