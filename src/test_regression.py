@@ -4,10 +4,12 @@ import logging
 import torch
 from laplace import Laplace
 from torch import nn
+from torch.nn import MSELoss
 from torch.utils.data import DataLoader, TensorDataset
 
 from src.hessian import layerwise as lw
 from src.hessian import rowwise as rw
+from src.hessian import backpack as bp
 
 
 def run():
@@ -22,7 +24,7 @@ def run():
         3.0 * X - 7.5
     y = y[:, 0].unsqueeze(-1)
     dataset = TensorDataset(X, y)
-    dataloader = DataLoader(dataset, batch_size=32)
+    dataloader = DataLoader(dataset, batch_size=42)
 
     model = nn.Sequential(
         nn.Linear(1, 16),
@@ -37,6 +39,7 @@ def run():
         nn.Tanh(),
         nn.Linear(16, 1)
     )
+
     hessian_structure = "diag"
     la = Laplace(
         model,
@@ -56,13 +59,18 @@ def run():
     Hs_layer = lw.RmseHessianCalculator().compute(dataloader, model, output_size)
     elapsed_layer = time.perf_counter() - t0
 
+    t0 = time.perf_counter()
+    Hs_backpack = bp.HessianCalculator(model, MSELoss()).compute(dataloader) / 2.
+    elapsed_backpack = time.perf_counter() - t0
+
     logging.info(f"{elapsed_la=}")
     logging.info(f"{elapsed_row=}")
     logging.info(f"{elapsed_layer=}")
+    logging.info(f"{elapsed_backpack=}")
 
-    torch.testing.assert_close(la.H, Hs_row, rtol=1e-3, atol=0.)  # Less than 0.01% off
-    torch.testing.assert_close(la.H, Hs_layer, rtol=1e-3, atol=0.)  # Less than 0.01% off
-    torch.testing.assert_close(Hs_row, Hs_layer, rtol=1e-3, atol=0.)  # Less than 0.01% off
+    torch.testing.assert_close(la.H, Hs_row, rtol=1e-3, atol=0.)
+    torch.testing.assert_close(la.H, Hs_layer, rtol=1e-3, atol=0.)
+    torch.testing.assert_close(la.H, Hs_backpack, rtol=15e-3, atol=0.)
 
 
 if __name__ == "__main__":
