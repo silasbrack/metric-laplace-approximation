@@ -77,6 +77,15 @@ class ContrastiveHessianCalculator(HessianCalculator):
 
         return Hs.sum(dim=0)
 
+    def compute_batch_pairs(self, model, embeddings, x, target, hard_pairs):
+        ap, p, an, n = hard_pairs
+
+        x1 = x[torch.cat((ap, an))]
+        x2 = x[torch.cat((p, n))]
+        t = torch.cat((torch.ones(p.shape[0]), torch.zeros(n.shape[0])))
+
+        return self.compute_batch(model, embeddings.shape[-1], x1, x2, t)
+
 
 def jacobians(x, model, output_size=784):
     """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\)
