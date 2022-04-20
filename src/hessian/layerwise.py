@@ -11,12 +11,8 @@ class HessianCalculator:
     @abstractmethod
     def compute_batch(self, *args, **kwargs):
         pass
-
-    def compute(self, loader, model, output_size):
-        # keep track of running sum
-        H_running_sum = torch.zeros_like(parameters_to_vector(model.parameters()))
-        counter = 0
-
+    
+    def init_model(self, model):
         self.feature_maps = []
 
         def fw_hook_get_latent(module, input, output):
@@ -24,6 +20,11 @@ class HessianCalculator:
 
         for k in range(len(model)):
             model[k].register_forward_hook(fw_hook_get_latent)
+    
+    def compute(self, loader, model, output_size):
+        # keep track of running sum
+        H_running_sum = torch.zeros_like(parameters_to_vector(model.parameters()))
+        counter = 0
 
         for batch in loader:
             batch = [item.to(self.device) for item in batch]
@@ -110,14 +111,22 @@ class RmseHessianCalculator(HessianCalculator):
 
 
 class ContrastiveHessianCalculator(HessianCalculator):
-    def compute_batch(self, model, output_size, x1, x2, y, *args, **kwargs):
+    margin = 0.2  # Minimum distance between negative pair and positive pair
+    
+    def compute_batch(self, model, output_size, x1, x2, y, *args, **kwargs):       
         self.feature_maps = []
-        model(x1)
+        f1 = model(x1)
         feature_maps1 = copy.copy(self.feature_maps)
         self.feature_maps = []
-        model(x2)
+        f2 = model(x2)
         feature_maps2 = copy.copy(self.feature_maps)
-        self.feature_maps = None
+        self.feature_maps = []
+        
+        mask = torch.logical_and(
+            (1 - y).bool(),
+            self.margin - torch.einsum("no,no->n", f1 - f2, f1 - f2) < 0
+            # margin - torch.pow(torch.linalg.norm(f1 - f2, dim=1), 2) < 0
+        )
 
         bs = x1.shape[0]
         feature_maps1 = [x1] + feature_maps1
@@ -127,7 +136,7 @@ class ContrastiveHessianCalculator(HessianCalculator):
         tmp1 = torch.diag_embed(torch.ones(bs, output_size, device=x1.device))
         tmp2 = torch.diag_embed(torch.ones(bs, output_size, device=x1.device))
         tmp3 = torch.diag_embed(torch.ones(bs, output_size, device=x1.device))
-
+        
         H = []
         with torch.no_grad():
             for k in range(len(model) - 1, -1, -1):
@@ -172,12 +181,30 @@ class ContrastiveHessianCalculator(HessianCalculator):
                         (feature_maps2[k + 1] > 0).float())
                 else:
                     raise NotImplementedError
-
+                
                 # Calculate the product of the Jacobians
                 # TODO: make more efficent by using row vectors
                 # Right now this is 96-97% of our runtime
                 tmp1 = torch.einsum("bnm,bnj,bjk->bmk", jacobian_x1, tmp1, jacobian_x1)
                 tmp2 = torch.einsum("bnm,bnj,bjk->bmk", jacobian_x2, tmp2, jacobian_x2)
                 tmp3 = torch.einsum("bnm,bnj,bjk->bmk", jacobian_x1, tmp3, jacobian_x2)
+    
+        Hs = torch.cat(H, dim=1)
+        mask = mask.view(-1, 1).expand(*Hs.shape)
+        Hs = Hs.masked_fill_(mask, 0.)
 
-        return torch.cat(H, dim=1).sum(dim=0)
+        return Hs.sum(dim=0)
+    
+    
+    def compute_batch_pairs(self, model, embeddings, x, target, hard_pairs):
+        ap, p, an, n = hard_pairs
+
+        x1 = x[torch.cat((ap, an))]
+        x2 = x[torch.cat((p, n))]
+        t = torch.cat((torch.ones(p.shape[0]), torch.zeros(n.shape[0])))
+        
+        x1 = x1.to(self.device)
+        x2 = x2.to(self.device)
+        t = t.to(self.device)
+
+        return self.compute_batch(model, embeddings.shape[-1], x1, x2, t)
