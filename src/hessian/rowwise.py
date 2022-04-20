@@ -6,6 +6,8 @@ from laplace.curvature.asdl import _get_batch_grad
 
 
 class HessianCalculator:
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    
     @abstractmethod
     def compute_batch(self, *args, **kwargs):
         pass
@@ -13,6 +15,9 @@ class HessianCalculator:
     def compute(self, loader, model, output_size):
         hessian = None
         for batch in loader:
+            
+            batch = [item.to(self.device) for item in batch]
+            
             Hs = self.compute_batch(model, output_size, *batch)
             if hessian is None:
                 hessian = Hs

@@ -6,6 +6,8 @@ from torch.nn.utils import parameters_to_vector
 
 
 class HessianCalculator:
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    
     @abstractmethod
     def compute_batch(self, *args, **kwargs):
         pass
@@ -24,6 +26,8 @@ class HessianCalculator:
             model[k].register_forward_hook(fw_hook_get_latent)
 
         for batch in loader:
+            batch = [item.to(self.device) for item in batch]
+            
             H = self.compute_batch(model, output_size, *batch)
             H_running_sum += H
 

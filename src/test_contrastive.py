@@ -10,8 +10,11 @@ from src.hessian import layerwise as lw
 from src.hessian import rowwise as rw
 from src.nearest_neighbors import get_nearest_latent_neighbors
 
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 def run():
+    logging.info(f"Cuda = {torch.cuda.is_available()}")
+    
     latent_size = 3
     model = nn.Sequential(
             nn.Flatten(),
@@ -23,13 +26,20 @@ def run():
             nn.ReLU(),
             nn.Linear(32, 3),
         )
+    
+    model.to(device)
 
     data = CIFARData("./data", batch_size=8, num_workers=0)
     data.setup()
-
+    
+    t0 = time.perf_counter()
     pair_dataset = get_nearest_latent_neighbors(data.dataset_test, model, latent_size, num_neighbors=5)
     pair_dataloader = DataLoader(pair_dataset, batch_size=32)
-
+    elapsed_miner = time.perf_counter() - t0
+    
+    logging.info(f"{elapsed_miner=}")
+    
+    
     t0 = time.perf_counter()
     Hs_row = rw.ContrastiveHessianCalculator().compute(pair_dataloader, model, latent_size)
     elapsed_row = time.perf_counter() - t0
@@ -40,7 +50,7 @@ def run():
     elapsed_layer = time.perf_counter() - t0
     logging.info(f"{elapsed_layer=}")
 
-    torch.testing.assert_close(Hs_layer, Hs_row, rtol=1e-2, atol=0.)  # Less than 1% off
+    torch.testing.assert_close(Hs_layer, Hs_row, rtol=1e-2, atol=0.)  # Less than .1% off
 
 
 if __name__ == "__main__":

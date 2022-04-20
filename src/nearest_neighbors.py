@@ -3,14 +3,26 @@ import torch
 from torch.utils.data import TensorDataset, DataLoader
 import faiss.contrib.torch_utils
 
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 def get_nearest_latent_neighbors(dataset, model, latent_size, num_neighbors):
     dataloader = DataLoader(dataset, batch_size=1024)
 
-    y_hat = torch.cat([model(x) for x, y in dataloader])
+    y_hat = torch.cat([model(x.to(device)) for x, y in dataloader])
+    
+    if device == 'cpu':
+        index = faiss.IndexFlatL2(latent_size)
+    else:
+        cfg = faiss.GpuIndexFlatConfig()
+        cfg.useFloat16 = False
+        cfg.device = 0
 
-    index = faiss.IndexFlatL2(latent_size)
+        flat_config = cfg
+        resources = faiss.StandardGpuResources()
+        index = faiss.GpuIndexFlatL2(resources, latent_size, flat_config)
+    
     index.add(y_hat)
+    
     _, indices = index.search(y_hat, num_neighbors)
 
     x1s = []

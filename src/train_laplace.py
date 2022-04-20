@@ -77,6 +77,7 @@ def run():
                 hard_pairs = miner(output, y)
                 con_loss.append(contrastive_loss(output, y, hard_pairs))
                 h.append(compute_hessian(net, output, x, y, hard_pairs))
+                
             con_loss = torch.cat(con_loss).mean()
             h = torch.cat(h).mean()
             loss = con_loss + alpha * kl
