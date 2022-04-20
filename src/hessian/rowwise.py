@@ -88,7 +88,11 @@ class ContrastiveHessianCalculator(HessianCalculator):
         x1 = x[torch.cat((ap, an))]
         x2 = x[torch.cat((p, n))]
         t = torch.cat((torch.ones(p.shape[0]), torch.zeros(n.shape[0])))
-
+ 
+        x1 = x1.to(self.device)
+        x2 = x2.to(self.device)
+        t = t.to(self.device)
+        
         return self.compute_batch(model, embeddings.shape[-1], x1, x2, t)
 
 

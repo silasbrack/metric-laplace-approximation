@@ -25,6 +25,7 @@ class HessianCalculator:
         # keep track of running sum
         H_running_sum = torch.zeros_like(parameters_to_vector(model.parameters()))
         counter = 0
+        self.init_model(model)
 
         for batch in loader:
             batch = [item.to(self.device) for item in batch]

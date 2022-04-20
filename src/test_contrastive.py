@@ -49,7 +49,8 @@ def run():
     Hs_layer = lw.ContrastiveHessianCalculator().compute(pair_dataloader, model, latent_size)
     elapsed_layer = time.perf_counter() - t0
     logging.info(f"{elapsed_layer=}")
-
+    print(f"{Hs_row=}")
+    print(f"{Hs_layer=}")
     torch.testing.assert_close(Hs_layer, Hs_row, rtol=1e-2, atol=0.)  # Less than .1% off
 
 
