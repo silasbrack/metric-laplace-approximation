@@ -69,7 +69,7 @@ def run():
     batch_size = 16
     data = CIFARData("data/", batch_size, 4)
     data.setup()
-    loader = data.test_dataloader()
+    loader = data.train_dataloader()
 
     epochs = 9
     h = 1e10 * torch.ones((num_params,), device=device)
@@ -79,7 +79,7 @@ def run():
     for epoch in range(epochs):
         print(f"{epoch=}")
         epoch_losses = []
-        train_laplace = epoch % F == 0
+        train_laplace = epoch % F == 0 
         print(f'{train_laplace=}')
         
         for x, y in tqdm(loader):
@@ -87,52 +87,55 @@ def run():
             
             optim.zero_grad()
             
+            # print('Training laplace')
+            mu_q = parameters_to_vector(net.parameters())
+            sigma_q = torch.abs(1 / (h + 1e-6))
+
+            kl = compute_kl_term(mu_q, sigma_q)
+            
+            # print(f"{sigma_q=}")
+            sampled_nn = sample_neural_network_wights(mu_q, sigma_q, n_samples=10)
+            # print(f"{sampled_nn=}")
+            
+            con_losses = []
             if train_laplace:
-                # print('Training laplace')
-                mu_q = parameters_to_vector(net.parameters())
-                sigma_q = torch.abs(1 / (h + 1e-6))
-
-                kl = compute_kl_term(mu_q, sigma_q)
-                
-                # print(f"{sigma_q=}")
-                sampled_nn = sample_neural_network_wights(mu_q, sigma_q)
-                # print(f"{sampled_nn=}")
-                
-                con_losses = []
                 h = []
-                for nn_i in sampled_nn:
-                    # print(f"{nn_i=}")
-                    vector_to_parameters(nn_i, net.parameters())
+                
+            for nn_i in sampled_nn:
+                # print(f"{nn_i=}")
+                vector_to_parameters(nn_i, net.parameters())
 
-                    output = net(x)
-                    hard_pairs = miner(output, y)
-                    # print(f"{hard_pairs=}")
-                    
+                output = net(x)
+                hard_pairs = miner(output, y)
+                # print(f"{hard_pairs=}")
+                if train_laplace:
                     hessian_batch = hessian_calculator.compute_batch_pairs(net, output, x, y, hard_pairs)
 
                     # Adjust hessian to the batch size
                     hessian_batch = hessian_batch / batch_size * data.size
                     
-                    # print(f"{hessian_batch=}")
-                    con_loss = contrastive_loss(output, y, hard_pairs)
-                    con_losses.append(con_loss)
                     h.append(hessian_batch)
                 
-                # Add identity to h
+                # print(f"{hessian_batch=}")
+                con_loss = contrastive_loss(output, y, hard_pairs)
+                con_losses.append(con_loss)
+            
+            # Add identity to h
+            if train_laplace:
                 h = torch.stack(h).mean(dim=0) if len(h) > 1 else h[0]
                 h += 1
-                
-                con_loss = torch.stack(con_losses).mean(dim=0)
-                # print(f"{h=}")
-                # print(f"kl={kl.mean()}")
-                
-                # print(f'Loss pre KL = {con_loss}')
-                
-                loss = con_loss + kl.mean() * kl_weight
-                # print(f'Loss post KL = {loss}')
-                
-                # Reassign parameters
-                vector_to_parameters(mu_q, net.parameters())
+            
+            con_loss = torch.stack(con_losses).mean(dim=0)
+            # print(f"{h=}")
+            # print(f"kl={kl.mean()}")
+            
+            # print(f'Loss pre KL = {con_loss}')
+            
+            loss = con_loss + kl.mean() * kl_weight
+            # print(f'Loss post KL = {loss}')
+            
+            # Reassign parameters
+            vector_to_parameters(mu_q, net.parameters())
                     
             # con_loss = torch.stack(con_loss).mean(dim=0)
             # print(f"Pre h={torch.stack(h)}")
