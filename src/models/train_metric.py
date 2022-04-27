@@ -10,7 +10,7 @@ import torch
 from pytorch_metric_learning import losses, miners
 from torch import optim, nn
 
-from src.models import ConvNet, FCNNet
+from src.models import ConvNet, LinearNet
 
 
 def run(
@@ -26,8 +26,8 @@ def run(
 
     if model == "conv":
         model = ConvNet()
-    elif model == "fcn":
-        model = FCNNet()
+    elif model == "linear":
+        model = LinearNet()
     else:
         raise ValueError(f"{model} is not a recognized model")
 

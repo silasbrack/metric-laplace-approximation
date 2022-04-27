@@ -9,6 +9,7 @@ from matplotlib import pyplot as plt
 from pl_bolts.datamodules import CIFAR10DataModule
 from pytorch_lightning.lite import LightningLite
 from torch.utils.tensorboard import SummaryWriter
+from src.data.cifar import CIFARData
 
 from src.models.utils import test_model
 
@@ -209,3 +210,8 @@ class MetricLite(LightningLite):
                 'test_map': test_accuracy['mean_average_precision']
             },
             run_name=".")
+
+    def setup_data(self, batch_size):
+        data = CIFARData("data/", batch_size, 12)
+        data.setup()
+        return data.train_dataloader(), data.val_dataloader(), data.test_dataloader()

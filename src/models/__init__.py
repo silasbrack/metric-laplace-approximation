@@ -1,3 +1,3 @@
 from .conv_net import ConvNet
-from .fcn_net import FCNNet
+from .linear import LinearNet
 from .metric_lite import MetricLite
