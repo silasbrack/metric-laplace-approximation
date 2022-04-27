@@ -12,18 +12,26 @@ from src.hessian.rowwise import ContrastiveHessianCalculator
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
+print(f'{device=}')
+
 def compute_kl_term(mu_q, sigma_q):
     """
     https://mr-easy.github.io/2020-04-16-kl-divergence-between-2-gaussian-distributions/
     """
+    # k = len(mu_q)
+    # kl = 0.5 * (
+    #         - torch.log(1 / sigma_q.prod())
+    #         - k
+    #         + torch.dot(mu_q, mu_q)
+    #         + torch.sum(sigma_q)
+    # )
     k = len(mu_q)
-    kl = 0.5 * (
-            - torch.log(torch.sum(sigma_q))
+    return 0.5 * (
+            torch.log(1.0 / (sigma_q + 1e-6) + 1e-6)
             - k
-            + torch.dot(mu_q, mu_q)
+            + torch.matmul(mu_q.T, mu_q)
             + torch.sum(sigma_q)
-    )
-    return kl
+        )
 
 
 def sample_neural_network_wights(parameters, posterior_scale, n_samples=32):
@@ -35,7 +43,7 @@ def sample_neural_network_wights(parameters, posterior_scale, n_samples=32):
 
 def run():
     contrastive_loss = losses.ContrastiveLoss()
-    miner = miners.MultiSimilarityMiner()
+    miner = miners.BatchEasyHardMiner(pos_strategy='all', neg_strategy='all')
     hessian_calculator = ContrastiveHessianCalculator()
 
     latent_dim = 10
@@ -55,7 +63,7 @@ def run():
     
     num_params = sum(p.numel() for p in net.parameters())
 
-    optim = Adam(net.parameters(), lr=3e-4)
+    optim = Adam(net.parameters(), lr=0)
 
     data = CIFARData("data/", 16, 4)
     data.setup()
@@ -63,49 +71,64 @@ def run():
 
     epochs = 10
     h = 1e10 * torch.ones((num_params,), device=device)
+    F = 1
+    kl_weight = 0
     
-    alpha = 1e-4  # try to play a bit with this
     for epoch in range(epochs):
+        print(f"{epoch=}")
         epoch_losses = []
+        
         for x, y in loader:
             x, y = x.to(device), y.to(device)
             
             optim.zero_grad()
+           
+            if epoch % F == 0:
+                print('Training laplace')
+                mu_q = parameters_to_vector(net.parameters())
+                sigma_q = 1 / (h + 1e-6)
 
-            mu_q = parameters_to_vector(net.parameters())
-            sigma_q = 1 / (h + 1e-6)
-
-            kl = compute_kl_term(mu_q, sigma_q)
-
-            print(f"{sigma_q=}")
-            sampled_nn = sample_neural_network_wights(mu_q, sigma_q)
-            print(f"{sampled_nn=}")
-            
-            con_loss = []
-            h = []
-            for nn_i in sampled_nn:
-                # print(f"{nn_i=}")
-                vector_to_parameters(nn_i, net.parameters())
-
-                output = net(x)
-                hard_pairs = miner(output, y)
-                # print(f"{hard_pairs=}")
-                loss = contrastive_loss(output, y, hard_pairs)
+                kl = compute_kl_term(mu_q, sigma_q)
                 
-                hessian_batch = hessian_calculator.compute_batch_pairs(net, output, x, y, hard_pairs)
-                print(f"{hessian_batch=}")
-                con_loss.append(loss)
-                h.append(hessian_batch)
-            
-            con_loss = torch.stack(con_loss).mean(dim=0)
-            print(f"Pre h={torch.stack(h)}")
-            h = torch.stack(h).mean(dim=0)
-            print(f"{h=}")
-            print(f"{con_loss=}")
-            loss = con_loss + alpha * kl
+                print(f"{sigma_q=}")
+                sampled_nn = sample_neural_network_wights(mu_q, sigma_q)
+                # print(f"{sampled_nn=}")
+                
+                con_losses = []
+                h = []
+                for nn_i in sampled_nn:
+                    # print(f"{nn_i=}")
+                    vector_to_parameters(nn_i, net.parameters())
+
+                    output = net(x)
+                    hard_pairs = miner(output, y)
+                    # print(f"{hard_pairs=}")
+                    
+                    hessian_batch = hessian_calculator.compute_batch_pairs(net, output, x, y, hard_pairs)
+                    # print(f"{hessian_batch=}")
+                    con_loss = contrastive_loss(output, y, hard_pairs)
+                    con_losses.append(con_loss)
+                    h.append(hessian_batch)
+                
+                h = torch.stack(h).mean(dim=0)
+                con_loss = torch.stack(con_losses).mean(dim=0)
+                print(f"{h=}")
+                print(f"kl={kl.mean()}")
+                
+                print(f'Loss pre KL = {con_loss}')
+                
+                loss = con_loss + kl.mean() * kl_weight
+                print(f'Loss post KL = {loss}')
+                
+                # Reassign parameters
+                vector_to_parameters(mu_q, net.parameters())
+                    
+            # con_loss = torch.stack(con_loss).mean(dim=0)
+            # print(f"Pre h={torch.stack(h)}")
             loss.backward()
             optim.step()
             epoch_losses.append(loss.item())
+            
         loss = torch.mean(torch.tensor(epoch_losses))
         logging.info(f"{loss=} for {epoch=}")
 
