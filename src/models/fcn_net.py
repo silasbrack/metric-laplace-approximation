@@ -17,4 +17,5 @@ class FCNNet(nn.Module):
         )
 
     def forward(self, x):
+        print(x.shape)
         return self.model(x)

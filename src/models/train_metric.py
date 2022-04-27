@@ -24,12 +24,12 @@ def run(
     name="testing",
 ):
 
-    model = ConvNet()
-
     if model == "conv":
         model = ConvNet()
     elif model == "fcn":
         model = FCNNet()
+    else:
+        raise ValueError(f"{model} is not a recognized model")
 
     if loss == "contrastive":
         loss_fn = losses.ContrastiveLoss()
