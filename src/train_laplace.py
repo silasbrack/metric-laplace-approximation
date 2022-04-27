@@ -18,20 +18,20 @@ def compute_kl_term(mu_q, sigma_q):
     """
     https://mr-easy.github.io/2020-04-16-kl-divergence-between-2-gaussian-distributions/
     """
-    # k = len(mu_q)
-    # kl = 0.5 * (
-    #         - torch.log(1 / sigma_q.prod())
-    #         - k
-    #         + torch.dot(mu_q, mu_q)
-    #         + torch.sum(sigma_q)
-    # )
     k = len(mu_q)
     return 0.5 * (
-            torch.log(1.0 / (sigma_q + 1e-6) + 1e-6)
+            - torch.log(sigma_q)
             - k
-            + torch.matmul(mu_q.T, mu_q)
+            + torch.dot(mu_q, mu_q)
             + torch.sum(sigma_q)
-        )
+    )
+    # k = len(mu_q)
+    # return 0.5 * (
+    #         torch.log(1.0 / (sigma_q + 1e-6) + 1e-6)
+    #         - k
+    #         + torch.matmul(mu_q.T, mu_q)
+    #         + torch.sum(sigma_q)
+    #     )
 
 
 def sample_neural_network_wights(parameters, posterior_scale, n_samples=32):
@@ -63,16 +63,17 @@ def run():
     
     num_params = sum(p.numel() for p in net.parameters())
 
-    optim = Adam(net.parameters(), lr=0)
+    optim = Adam(net.parameters(), lr=3e-4)
 
-    data = CIFARData("data/", 16, 4)
+    batch_size = 16
+    data = CIFARData("data/", batch_size, 4)
     data.setup()
     loader = data.train_dataloader()
 
     epochs = 10
     h = 1e10 * torch.ones((num_params,), device=device)
     F = 1
-    kl_weight = 0
+    kl_weight = 1
     
     for epoch in range(epochs):
         print(f"{epoch=}")
@@ -86,7 +87,7 @@ def run():
             if epoch % F == 0:
                 print('Training laplace')
                 mu_q = parameters_to_vector(net.parameters())
-                sigma_q = 1 / (h + 1e-6)
+                sigma_q = torch.abs(1 / (h + 1e-6))
 
                 kl = compute_kl_term(mu_q, sigma_q)
                 
@@ -105,12 +106,19 @@ def run():
                     # print(f"{hard_pairs=}")
                     
                     hessian_batch = hessian_calculator.compute_batch_pairs(net, output, x, y, hard_pairs)
+
+                    # Adjust hessian to the batch size
+                    hessian_batch = hessian_batch / batch_size * data.size
+                    
                     # print(f"{hessian_batch=}")
                     con_loss = contrastive_loss(output, y, hard_pairs)
                     con_losses.append(con_loss)
                     h.append(hessian_batch)
                 
-                h = torch.stack(h).mean(dim=0)
+                # Add identity to h
+                h = torch.stack(h).mean(dim=0) if len(h) > 1 else h[0]
+                h += 1
+                
                 con_loss = torch.stack(con_losses).mean(dim=0)
                 print(f"{h=}")
                 print(f"kl={kl.mean()}")
