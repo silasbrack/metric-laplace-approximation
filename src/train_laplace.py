@@ -67,7 +67,7 @@ def run():
     optim = Adam(net.parameters(), lr=3e-4)
 
     batch_size = 16
-    data = CIFARData("data/", batch_size, -1)
+    data = CIFARData("data/", batch_size, 4)
     data.setup()
     loader = data.test_dataloader()
 
