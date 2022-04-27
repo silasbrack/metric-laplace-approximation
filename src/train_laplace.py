@@ -1,6 +1,7 @@
 import logging
 
 import torch
+from tqdm import tqdm
 from pytorch_metric_learning import miners
 from pytorch_metric_learning import losses
 from torch import nn
@@ -43,7 +44,7 @@ def sample_neural_network_wights(parameters, posterior_scale, n_samples=32):
 
 def run():
     contrastive_loss = losses.ContrastiveLoss()
-    miner = miners.BatchEasyHardMiner(pos_strategy='all', neg_strategy='all')
+    miner = miners.MultiSimilarityMiner()
     hessian_calculator = ContrastiveHessianCalculator()
 
     latent_dim = 10
@@ -66,32 +67,34 @@ def run():
     optim = Adam(net.parameters(), lr=3e-4)
 
     batch_size = 16
-    data = CIFARData("data/", batch_size, 4)
+    data = CIFARData("data/", batch_size, -1)
     data.setup()
-    loader = data.train_dataloader()
+    loader = data.test_dataloader()
 
-    epochs = 10
+    epochs = 9
     h = 1e10 * torch.ones((num_params,), device=device)
-    F = 1
-    kl_weight = 1
+    F = 3
+    kl_weight = 0.7
     
     for epoch in range(epochs):
         print(f"{epoch=}")
         epoch_losses = []
+        train_laplace = epoch % F == 0
+        print(f'{train_laplace=}')
         
-        for x, y in loader:
+        for x, y in tqdm(loader):
             x, y = x.to(device), y.to(device)
             
             optim.zero_grad()
-           
-            if epoch % F == 0:
-                print('Training laplace')
+            
+            if train_laplace:
+                # print('Training laplace')
                 mu_q = parameters_to_vector(net.parameters())
                 sigma_q = torch.abs(1 / (h + 1e-6))
 
                 kl = compute_kl_term(mu_q, sigma_q)
                 
-                print(f"{sigma_q=}")
+                # print(f"{sigma_q=}")
                 sampled_nn = sample_neural_network_wights(mu_q, sigma_q)
                 # print(f"{sampled_nn=}")
                 
@@ -120,13 +123,13 @@ def run():
                 h += 1
                 
                 con_loss = torch.stack(con_losses).mean(dim=0)
-                print(f"{h=}")
-                print(f"kl={kl.mean()}")
+                # print(f"{h=}")
+                # print(f"kl={kl.mean()}")
                 
-                print(f'Loss pre KL = {con_loss}')
+                # print(f'Loss pre KL = {con_loss}')
                 
                 loss = con_loss + kl.mean() * kl_weight
-                print(f'Loss post KL = {loss}')
+                # print(f'Loss post KL = {loss}')
                 
                 # Reassign parameters
                 vector_to_parameters(mu_q, net.parameters())
@@ -140,7 +143,9 @@ def run():
         loss = torch.mean(torch.tensor(epoch_losses))
         logging.info(f"{loss=} for {epoch=}")
 
-
+    torch.save(net.state_dict(), f='models/laplace/model.ckpt')
+    torch.save(h, f='models/laplace/hessian.ckpt')
+    
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.INFO)
     run()
