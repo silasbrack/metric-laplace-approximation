@@ -10,21 +10,26 @@ import torch
 from pytorch_metric_learning import losses, miners
 from torch import optim, nn
 
-from src.models import ConvNet
+from src.models import ConvNet, FCNNet
 
 
 def run(
     loss="contrastive",
     miner="multisimilarity",
-    epochs=3,
+    model="conv",
+    epochs=5,
     freq=2,
     lr=3e-4,
     batch_size=64,
     name="testing",
 ):
 
-    # model = ConvNet()
-    model =
+    if model == "conv":
+        model = ConvNet()
+    elif model == "fcn":
+        model = FCNNet()
+    else:
+        raise ValueError(f"{model} is not a recognized model")
 
     if loss == "contrastive":
         loss_fn = losses.ContrastiveLoss()
@@ -36,7 +41,7 @@ def run(
     if miner == "multisimilarity":
         miner_fn = miners.MultiSimilarityMiner()
     elif miner == "triplet":
-        miner_fn = miners.TripletMarginMiner()
+        miner_fn = miners.TripletMarginMiner(type_of_triplets="hard")
     else:
         raise ValueError(f"{miner} is not a recognized miner")
 

@@ -91,3 +91,4 @@ target/
 
 # Logging
 logs/
+models/
