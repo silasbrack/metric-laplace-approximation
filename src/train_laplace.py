@@ -47,7 +47,7 @@ def run():
     miner = miners.MultiSimilarityMiner()
     hessian_calculator = ContrastiveHessianCalculator()
 
-    latent_dim = 10
+    latent_dim = 2
     net = nn.Sequential(
         nn.Flatten(),
         nn.Linear(28*28*1, 32),
@@ -69,9 +69,9 @@ def run():
     batch_size = 16
     data = CIFARData("data/", batch_size, 4)
     data.setup()
-    loader = data.train_dataloader()
+    loader = data.val_dataloader()
 
-    epochs = 9
+    epochs = 4
     h = 1e10 * torch.ones((num_params,), device=device)
     F = 3
     kl_weight = 0.7
@@ -146,8 +146,8 @@ def run():
         loss = torch.mean(torch.tensor(epoch_losses))
         logging.info(f"{loss=} for {epoch=}")
 
-    torch.save(net.state_dict(), f='models/laplace/model.ckpt')
-    torch.save(h, f='models/laplace/hessian.ckpt')
+    torch.save(net.state_dict(), f='models/laplace_model.ckpt')
+    torch.save(h, f='models/laplace_hessian.ckpt')
     
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.INFO)
