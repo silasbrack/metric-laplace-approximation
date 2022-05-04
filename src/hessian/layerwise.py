@@ -113,6 +113,7 @@ class RmseHessianCalculator(HessianCalculator):
 
 class ContrastiveHessianCalculator(HessianCalculator):
     margin = 0.2  # Minimum distance between negative pair and positive pair
+    alpha = 1 + 0.1  # Positive definite for alpha > 1
     
     def compute_batch(self, model, output_size, x1, x2, y, *args, **kwargs):       
         self.feature_maps = []
@@ -134,9 +135,12 @@ class ContrastiveHessianCalculator(HessianCalculator):
         feature_maps2 = [x2] + feature_maps2
 
         # Saves the product of the Jacobians wrt layer input
-        tmp1 = torch.diag_embed(torch.ones(bs, output_size, device=x1.device))
-        tmp2 = torch.diag_embed(torch.ones(bs, output_size, device=x1.device))
-        tmp3 = torch.diag_embed(torch.ones(bs, output_size, device=x1.device))
+        # tmp1 = torch.diag_embed(torch.ones(bs, output_size, device=x1.device))
+        # tmp2 = torch.diag_embed(torch.ones(bs, output_size, device=x1.device))
+        # tmp3 = torch.diag_embed(torch.ones(bs, output_size, device=x1.device))
+        tmp1 = torch.diag_embed( (1+self.alpha) * torch.ones(bs, output_size, device=x1.device))
+        tmp2 = torch.diag_embed( (1+self.alpha) * torch.ones(bs, output_size, device=x1.device))
+        tmp3 = torch.diag_embed( torch.ones(bs, output_size, device=x1.device))
         
         H = []
         with torch.no_grad():
@@ -154,6 +158,7 @@ class ContrastiveHessianCalculator(HessianCalculator):
                         h2 = torch.cat([h2, diag_elements2], dim=1)
                         h3 = torch.cat([h3, diag_elements3], dim=1)
 
+                    # h_k = h1*(1 + self.alpha) + h2*(1 + self.alpha) - 4 * h3
                     h_k = h1 + h2 - 4 * h3
 
                     H = [h_k] + H
@@ -189,7 +194,7 @@ class ContrastiveHessianCalculator(HessianCalculator):
                 tmp1 = torch.einsum("bnm,bnj,bjk->bmk", jacobian_x1, tmp1, jacobian_x1)
                 tmp2 = torch.einsum("bnm,bnj,bjk->bmk", jacobian_x2, tmp2, jacobian_x2)
                 tmp3 = torch.einsum("bnm,bnj,bjk->bmk", jacobian_x1, tmp3, jacobian_x2)
-    
+
         Hs = torch.cat(H, dim=1)
         mask = mask.view(-1, 1).expand(*Hs.shape)
         Hs = Hs.masked_fill_(mask, 0.)

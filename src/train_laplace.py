@@ -7,13 +7,14 @@ from pytorch_metric_learning import losses
 from torch import nn
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.optim import Adam
+import fire
 
 from src.data.cifar import CIFARData
-from src.hessian.rowwise import ContrastiveHessianCalculator
+from src.hessian.layerwise import ContrastiveHessianCalculator
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-print(f'{device=}')
+print(f"{device=}")
 
 def compute_kl_term(mu_q, sigma_q):
     """
@@ -42,7 +43,7 @@ def sample_neural_network_wights(parameters, posterior_scale, n_samples=32):
     return parameters.reshape(1, n_params) + samples
 
 
-def run():
+def run(epochs = 4, freq = 3, nn_samples = 10):
     contrastive_loss = losses.ContrastiveLoss()
     miner = miners.MultiSimilarityMiner()
     hessian_calculator = ContrastiveHessianCalculator()
@@ -60,26 +61,25 @@ def run():
     )
     net.to(device)
     
-    # hessian_calculator.init_model(net)
+    hessian_calculator.init_model(net)
     
     num_params = sum(p.numel() for p in net.parameters())
 
     optim = Adam(net.parameters(), lr=3e-4)
 
-    batch_size = 16
+    batch_size = 32
     data = CIFARData("data/", batch_size, 4)
     data.setup()
-    loader = data.val_dataloader()
+    loader = data.train_dataloader()
 
-    epochs = 4
     h = 1e10 * torch.ones((num_params,), device=device)
-    F = 3
-    kl_weight = 0.7
+    
+    kl_weight = 0.1
     
     for epoch in range(epochs):
         print(f"{epoch=}")
         epoch_losses = []
-        train_laplace = epoch % F == 0 
+        train_laplace = epoch % freq == 0 
         print(f'{train_laplace=}')
         
         for x, y in tqdm(loader):
@@ -89,12 +89,12 @@ def run():
             
             # print('Training laplace')
             mu_q = parameters_to_vector(net.parameters())
-            sigma_q = torch.abs(1 / (h + 1e-6))
+            sigma_q = 1 / (h + 1e-6)
 
             kl = compute_kl_term(mu_q, sigma_q)
             
             # print(f"{sigma_q=}")
-            sampled_nn = sample_neural_network_wights(mu_q, sigma_q, n_samples=10)
+            sampled_nn = sample_neural_network_wights(mu_q, sigma_q, n_samples=nn_samples)
             # print(f"{sampled_nn=}")
             
             con_losses = []
@@ -142,13 +142,16 @@ def run():
             loss.backward()
             optim.step()
             epoch_losses.append(loss.item())
-            
-        loss = torch.mean(torch.tensor(epoch_losses))
-        logging.info(f"{loss=} for {epoch=}")
 
+        loss_mean = torch.mean(torch.tensor(epoch_losses))
+        logging.info(f"{loss_mean=} for {epoch=}")
+
+        print(f'{sigma_q=}')
+        print(f'Negative values in sigma q = {(sigma_q < 0).sum()}')
+    
     torch.save(net.state_dict(), f='models/laplace_model.ckpt')
     torch.save(h, f='models/laplace_hessian.ckpt')
     
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.INFO)
-    run()
+    fire.Fire(run)
