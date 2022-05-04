@@ -71,6 +71,7 @@ def run(
         batch_size=batch_size,
         optimizer=optimizer,
         load_dir=None,
+        to_visualize=True
     )
 
     # Training loop
@@ -78,12 +79,12 @@ def run(
                freq=freq)
 
     # Testing
-    # lite.test()
+    lite.test()
 
     # Log hyperparams
-    # lite.log_hyperparams()
+    lite.log_hyperparams()
 
-    return lite
+    # return lite
 
 
 if __name__ == "__main__":

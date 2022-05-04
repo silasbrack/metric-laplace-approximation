@@ -9,7 +9,6 @@ from matplotlib import pyplot as plt
 from pl_bolts.datamodules import CIFAR10DataModule
 from pytorch_lightning.lite import LightningLite
 from torch.utils.tensorboard import SummaryWriter
-from src.data.cifar import CIFARData
 
 from src.models.utils import test_model
 
@@ -54,10 +53,11 @@ class MetricLite(LightningLite):
         self.model, self.optimizer = self.setup(model, optimizer)
         self.epoch = 0
 
-    # noinspection PyMethodOverriding
-    def run(self, train_loader, val_loader, epochs, freq):
-        self.train_loader, val_loader = self.setup_dataloaders(train_loader, val_loader)
+    def train(self, epochs, freq):
+        return self.run(epochs, freq)
 
+    # noinspection PyMethodOverriding
+    def run(self, epochs, freq):
         logging.info(f'Training')
         self.model.train()
 
@@ -98,12 +98,12 @@ class MetricLite(LightningLite):
         logging.info(f'Finished training @ epoch: {self.epoch}')
         return self.model
 
-    def validate(self, val_loader):
+    def validate(self):
         logging.info(f'Validating @ epoch: {self.epoch}')
 
         self.model.eval()
         val_loss = 0.0
-        for i, (image, target) in enumerate(val_loader):
+        for i, (image, target) in enumerate(self.val_loader):
             output = self.model(image)
 
             hard_pairs = self.miner(output, target)
@@ -114,7 +114,7 @@ class MetricLite(LightningLite):
         self.writer.add_scalar("val_loss", average_val_loss, global_step=self.epoch, new_style=True)
 
         accuracy = test_model(self.train_loader.dataset,
-                              val_loader.dataset,
+                              self.val_loader.dataset,
                               self.model,
                               self.device)
 
@@ -122,12 +122,12 @@ class MetricLite(LightningLite):
         self.writer.add_scalar("val_map", accuracy['mean_average_precision'], self.epoch)
 
         if self.to_visualize:
-            self.visualize(val_loader, val_loader.dataset.dataset.class_to_idx)
+            self.visualize(self.val_loader, self.val_loader.dataset.dataset.class_to_idx)
 
-    def test(self, test_loader):
+    def test(self):
         logging.info(f'Testing @ epoch: {self.epoch}')
         accuracy = test_model(self.train_loader.dataset,
-                              test_loader.dataset,
+                              self.test_loader.dataset,
                               self.model,
                               self.device)
 
@@ -135,7 +135,7 @@ class MetricLite(LightningLite):
         self.writer.add_scalar("test_map", accuracy['mean_average_precision'], self.epoch)
 
         if self.to_visualize:
-            self.visualize(test_loader, test_loader.dataset.class_to_idx)
+            self.visualize(self.test_loader, self.test_loader.dataset.class_to_idx)
 
     def visualize(self, dataloader, class_to_idx):
         logging.info(f'Visualizing @ epoch: {self.epoch}')
@@ -165,6 +165,18 @@ class MetricLite(LightningLite):
         umap.plot.points(mapper, labels=labels, ax=ax)
         self.writer.add_figure('UMAP', fig, self.epoch)
         logging.info('Finished UMAP')
+
+    def setup_data(self, batch_size):
+        # DATA
+        data = CIFAR10DataModule("./data", batch_size=batch_size, num_workers=4, normalize=True)
+        data.prepare_data()
+        data.setup()
+
+        train_loader = data.train_dataloader()
+        val_loader = data.val_dataloader()
+        test_loader = data.test_dataloader()
+
+        return self.setup_dataloaders(train_loader, val_loader, test_loader)
 
     def forward(self, x):
         return self.model(x)
@@ -210,8 +222,3 @@ class MetricLite(LightningLite):
                 'test_map': test_accuracy['mean_average_precision']
             },
             run_name=".")
-
-    def setup_data(self, batch_size):
-        data = CIFARData("data/", batch_size, 12)
-        data.setup()
-        return data.train_dataloader(), data.val_dataloader(), data.test_dataloader()
