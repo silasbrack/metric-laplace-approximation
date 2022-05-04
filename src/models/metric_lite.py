@@ -121,8 +121,8 @@ class MetricLite(LightningLite):
         self.writer.add_scalar("val_acc", accuracy["precision_at_1"], self.epoch)
         self.writer.add_scalar("val_map", accuracy['mean_average_precision'], self.epoch)
 
-        if self.to_visualize:
-            self.visualize(self.val_loader, self.val_loader.dataset.dataset.class_to_idx)
+        # if self.to_visualize:
+        #     self.visualize(self.val_loader, self.val_loader.dataset.dataset.class_to_idx)
 
     def test(self):
         logging.info(f'Testing @ epoch: {self.epoch}')
@@ -140,7 +140,7 @@ class MetricLite(LightningLite):
     def visualize(self, dataloader, class_to_idx):
         logging.info(f'Visualizing @ epoch: {self.epoch}')
 
-        fig, ax = plt.subplots(1, 1, figsize=(10, 10))
+        fig, axs = plt.subplots(2, 1, figsize=(10, 15))
 
         images = []
         targets = []
@@ -157,13 +157,23 @@ class MetricLite(LightningLite):
         target = target.cpu().detach().numpy()
         x = x.cpu().detach().numpy()
 
+        # Show raw images UMAPped
+        image = image.cpu().detach().numpy()
+        nsamples, nr, ng, nb = image.shape
+        image = image.reshape((nsamples,nr*ng*nb))
+        
         idx_to_class = {v: k for k, v in class_to_idx.items()}
 
         labels = np.array([idx_to_class[i] for i in target])
 
+        mapper = umap.UMAP().fit(image)
+        umap.plot.points(mapper, labels=labels, ax=axs[0])
+
         mapper = umap.UMAP().fit(x)
-        umap.plot.points(mapper, labels=labels, ax=ax)
+        umap.plot.points(mapper, labels=labels, ax=axs[1])
+
         self.writer.add_figure('UMAP', fig, self.epoch)
+
         logging.info('Finished UMAP')
 
     def setup_data(self, batch_size):

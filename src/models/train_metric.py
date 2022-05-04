@@ -22,6 +22,7 @@ def run(
     lr=3e-4,
     batch_size=64,
     name="testing",
+    visualize=True
 ):
 
     if model == "conv":
@@ -55,7 +56,8 @@ def run(
         "model": model.__class__.__name__,
         "miner": miner_fn.__class__.__name__,
         "loss_fn": loss_fn.__class__.__name__,
-        "cuda": torch.cuda.is_available()
+        "cuda": torch.cuda.is_available(),
+        "visualize": visualize
     }
 
     logging.info(f"Parameters: {params}")
@@ -71,7 +73,7 @@ def run(
         batch_size=batch_size,
         optimizer=optimizer,
         load_dir=None,
-        to_visualize=True
+        to_visualize=visualize
     )
 
     # Training loop

@@ -8,16 +8,16 @@ class ConvNet(nn.Module):
         self.latent_dim = latent_dim
 
         self.model = nn.Sequential(
-            nn.Conv2d(3, 48, 5, 1),
+            nn.Conv2d(3, 36, 5, 1),
             nn.ReLU(),
-            nn.Conv2d(48, 96, 3, 1),
+            nn.Conv2d(36, 64, 3, 1),
             nn.ReLU(),
-            nn.Conv2d(96, 158, 3, 1),
+            nn.Conv2d(64, 96, 3, 1),
             nn.ReLU(),
             nn.MaxPool2d(2),
             # nn.Dropout2d(0.25),
             nn.Flatten(),
-            nn.Linear(22752, latent_dim),
+            nn.Linear(13824, latent_dim),
         )
 
     def forward(self, x):
