@@ -19,9 +19,12 @@ def run():
     torch.manual_seed(42)
 
     X = torch.rand((num_observations, output_size)).float()
-    y = 4.5 * torch.cos(2 * torch.pi * X + 1.5 * torch.pi) - \
-        3 * torch.sin(4.3 * torch.pi * X + 0.3 * torch.pi) + \
-        3.0 * X - 7.5
+    y = (
+        4.5 * torch.cos(2 * torch.pi * X + 1.5 * torch.pi)
+        - 3 * torch.sin(4.3 * torch.pi * X + 0.3 * torch.pi)
+        + 3.0 * X
+        - 7.5
+    )
     y = y[:, 0].unsqueeze(-1)
     dataset = TensorDataset(X, y)
     dataloader = DataLoader(dataset, batch_size=42)
@@ -37,7 +40,7 @@ def run():
         nn.Tanh(),
         nn.Linear(32, 16),
         nn.Tanh(),
-        nn.Linear(16, 1)
+        nn.Linear(16, 1),
     )
 
     hessian_structure = "diag"
@@ -50,17 +53,24 @@ def run():
     t0 = time.perf_counter()
     la.fit(dataloader)
     elapsed_la = time.perf_counter() - t0
+    print(la.H.min(), la.H.max())
 
     t0 = time.perf_counter()
-    Hs_row = rw.RmseHessianCalculator(hessian_structure).compute(dataloader, model, output_size)
+    Hs_row = rw.RmseHessianCalculator(hessian_structure).compute(
+        dataloader, model, output_size
+    )
     elapsed_row = time.perf_counter() - t0
 
     t0 = time.perf_counter()
-    Hs_layer = lw.RmseHessianCalculator().compute(dataloader, model, output_size)
+    Hs_layer = lw.RmseHessianCalculator().compute(
+        dataloader, model, output_size
+    )
     elapsed_layer = time.perf_counter() - t0
 
     t0 = time.perf_counter()
-    Hs_backpack = bp.HessianCalculator(model, MSELoss()).compute(dataloader) / 2.
+    Hs_backpack = (
+        bp.HessianCalculator(model, MSELoss()).compute(dataloader) / 2.0
+    )
     elapsed_backpack = time.perf_counter() - t0
 
     logging.info(f"{elapsed_la=}")
@@ -68,9 +78,9 @@ def run():
     logging.info(f"{elapsed_layer=}")
     logging.info(f"{elapsed_backpack=}")
 
-    torch.testing.assert_close(la.H, Hs_row, rtol=1e-3, atol=0.)
-    torch.testing.assert_close(la.H, Hs_layer, rtol=1e-3, atol=0.)
-    torch.testing.assert_close(la.H, Hs_backpack, rtol=15e-3, atol=0.)
+    torch.testing.assert_close(la.H, Hs_row, rtol=1e-3, atol=0.0)
+    torch.testing.assert_close(la.H, Hs_layer, rtol=1e-3, atol=0.0)
+    torch.testing.assert_close(la.H, Hs_backpack, rtol=15e-3, atol=0.0)
 
 
 if __name__ == "__main__":

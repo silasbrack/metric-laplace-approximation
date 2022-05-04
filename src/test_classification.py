@@ -61,7 +61,7 @@ def run():
     logging.info(f"{elapsed_la=}")
     logging.info(f"{elapsed_backpack=}")
 
-    torch.testing.assert_close(Hs_la, Hs_backpack, rtol=1e-3, atol=0.)
+    torch.testing.assert_close(Hs_la, Hs_backpack, rtol=1e-3, atol=0.0)
 
 
 if __name__ == "__main__":

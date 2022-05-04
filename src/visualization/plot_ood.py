@@ -5,9 +5,11 @@ import pickle
 import numpy as np
 import seaborn as sns
 
-with open("preds.pkl", "rb") as f:
+# ext = "_posthoc_cifar100"
+
+with open(f"preds.pkl", "rb") as f:
     preds = pickle.load(f)
-with open("preds_ood.pkl", "rb") as f:
+with open(f"preds_ood.pkl", "rb") as f:
     preds_ood = pickle.load(f)
 
 means_preds = preds["means"].detach().numpy()
@@ -17,7 +19,7 @@ means_preds_ood = preds_ood["means"].detach().numpy()
 vars_preds_ood = preds_ood["vars"].detach().numpy()
 limit = 100
 
-fig, axs = plt.subplots(2,1)
+fig, axs = plt.subplots(2,1, figsize=(4, 6))
 
 ## Plot scatter with uncertainty
 
@@ -30,14 +32,25 @@ for i in range(limit):
     elp = Ellipse((means_preds_ood[i,0],means_preds_ood[i,1]), vars_preds_ood[i,0], vars_preds_ood[i,1], fc='None', edgecolor='r', lw=0.5)
     axs[0].add_patch(elp)
 
-handles, labels = axs[0].get_legend_handles_labels()
-fig.legend(handles, labels, loc='upper center')
+# handles, labels = axs[0].get_legend_handles_labels()
+# fig.legend(handles, labels, loc='upper center')
+
+axs[0].set(
+    xlabel="Latent dim 1",
+    ylabel="Latent dim 2",
+)
 
 ## Plot variance density
 id_density = vars_preds.flatten()
-sns.kdeplot(id_density, ax=axs[1], color="b")
+sns.kdeplot(id_density, ax=axs[1], color="b", label="i.d.")
 
 ood_density = vars_preds_ood.flatten()
-sns.kdeplot(ood_density, ax=axs[1], color="r")
+sns.kdeplot(ood_density, ax=axs[1], color="r", label="o.o.d")
 
-plt.show()
+axs[1].set(
+    xlabel="Variance",
+)
+axs[1].legend()
+
+fig.tight_layout()
+fig.savefig("ood_plot.png")
