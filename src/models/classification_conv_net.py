@@ -45,7 +45,7 @@ class ConvNet(pl.LightningModule):
         self.val_accuracy = torchmetrics.Accuracy()
 
     def forward(self, x):
-        return self.model(x)
+        return F.softmax(self.model(x), dim=-1)
 
     def training_step(self, batch, batch_idx):
         data, labels = batch
