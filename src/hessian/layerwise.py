@@ -142,6 +142,7 @@ class ContrastiveHessianCalculator(HessianCalculator):
         bs = x1.shape[0]
         feature_maps1 = [x1] + feature_maps1
         feature_maps2 = [x2] + feature_maps2
+        # print(feature_maps1, feature_maps2)
 
         # Saves the product of the Jacobians wrt layer input
         tmp1 = torch.diag_embed(
@@ -179,9 +180,16 @@ class ContrastiveHessianCalculator(HessianCalculator):
                             feature_maps1[k],
                             feature_maps2[k],
                         ).view(bs, -1)
-                    except:
+                    except Exception as e:
                         print(
-                            diag_elements1, feature_maps1[k], feature_maps1[k]
+                            # model[k],
+                            # diag_elements1,
+                            # diag_elements2,
+                            # diag_elements3,
+                            feature_maps1,
+                            feature_maps2,
+                            feature_maps1[k],
+                            feature_maps2[k],
                         )
                         raise Exception
                     if model[k].bias is not None:

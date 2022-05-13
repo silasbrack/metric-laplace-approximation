@@ -18,6 +18,7 @@ from pl_bolts.datamodules import (
     FashionMNISTDataModule,
     MNISTDataModule,
 )
+import wandb
 
 from src.data import CIFAR100DataModule, SVHNDataModule
 from src.hessian.layerwise import ContrastiveHessianCalculator
@@ -83,21 +84,42 @@ def run():
     # ood = "mnist"
     id_ = "cifar10"
     ood = "svhn"
+    epochs = 50
+    lr = 3e-4
+    batch_size = 16
 
     latent_dim = 25
     if id_ == "fashionmnist":
         net = ConvDense(1, latent_dim).to(device)
-        data = FashionMNISTDataModule("data/", 16, 4)
+        data = FashionMNISTDataModule("data/", batch_size, 4)
         data.prepare_data()
         data.setup()
     elif id_ == "cifar10":
         net = ConvDense(3, latent_dim).to(device)
-        data = CIFAR10DataModule("data/", 16, 4)
+        data = CIFAR10DataModule("data/", batch_size, 4)
         data.setup()
     else:
         raise NotImplementedError
     # num_params = sum(p.numel() for p in net.parameters())
     # logging.info(f"Model has {num_params} parameters.")
+
+    
+    wandb.init(
+        project="metric-laplace-approximation",
+        name="post-hoc-laplace",
+        config={
+            "learning_rate": lr,
+            "epochs": epochs,
+            "model": "ConvDense",
+            "latent_dim": latent_dim,
+            "miner": "MultiSimilarityMiner",
+            "loss": "ContrastiveLoss",
+            "optimizer": "Adam",
+            "id": id_,
+            "ood": ood,
+        },
+    )
+    wandb.watch(net)
 
     loader = data.train_dataloader()
 
@@ -109,8 +131,6 @@ def run():
     # )
 
     logging.info("Finding MAP solution.")
-    epochs = 50
-    lr = 3e-4
     miner = miners.MultiSimilarityMiner()
     contrastive_loss = losses.ContrastiveLoss()
     optim = Adam(net.parameters(), lr=lr)
@@ -123,10 +143,13 @@ def run():
             loss = contrastive_loss(output, y, hard_pairs)
             loss.backward()
             optim.step()
+            wandb.log({"Training loss": loss.item(),
+                       "Epoch": epoch})
 
     accuracy = test_model(
         loader.dataset, data.test_dataloader().dataset, net, device
     )
+    wandb.summary["Post hoc accuracy"] = accuracy["precision_at_1"]
     logging.info(
         f"Accuracy after training is {100*accuracy['precision_at_1']:.2f}%."
     )
@@ -157,6 +180,8 @@ def run():
     # mu_q = parameters_to_vector(net.parameters())
     sigma_q = 1 / (h + 1e-6)
 
+    wandb.log({"Hessian": h})
+
     def sample(parameters, posterior_scale, n_samples=16):
         n_params = len(parameters)
         samples = torch.randn(n_samples, n_params, device=parameters.device)
@@ -169,23 +194,24 @@ def run():
     device = "cpu"
     net = net.to(device)
     samples = samples.to(device)
-
+    
     logging.info("Generating predictions from samples.")
     preds = generate_predictions_from_samples(
         data.test_dataloader(), samples, net, net.linear, device
     )
     preds = preds.detach().cpu()
 
-    with open("preds_posthoc_25.pkl", "wb") as f:
-        pickle.dump(
-            {"means": preds.mean(dim=0), "vars": preds.var(dim=0)},
-            f,
-        )
+    wandb.log({"Prediction mean": preds.mean(dim=0), "Prediction variance": preds.var(dim=0)})
+    # with open("preds_posthoc_25.pkl", "wb") as f:
+    #     pickle.dump(
+    #         {"means": preds.mean(dim=0), "vars": preds.var(dim=0)},
+    #         f,
+    #     )
 
     logging.info("Generating ood predictions from samples.")
 
     if ood == "cifar100":
-        ood_data = CIFAR100DataModule("data/", 16, 4)
+        ood_data = CIFAR100DataModule("data/", batch_size, 4)
         ood_data.setup()
         test_set = ood_data.dataset_test
         subset_classes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
@@ -194,20 +220,20 @@ def run():
         )
         indices = torch.arange(len(test_set))[mask]
         ood_dataset = Subset(test_set, indices)
-        ood_dataloader = DataLoader(ood_dataset, batch_size=16, num_workers=4)
+        ood_dataloader = DataLoader(ood_dataset, batch_size=batch_size, num_workers=4)
         preds_ood = generate_predictions_from_samples(
             ood_dataloader, samples, net, net.linear, device
         )
         preds_ood = preds_ood.detach().cpu()
     elif ood == "mnist":
-        ood_data = MNISTDataModule("data/", 16, 4)
+        ood_data = MNISTDataModule("data/", batch_size, 4)
         ood_data.setup()
         preds_ood = generate_predictions_from_samples(
             ood_data.test_dataloader(), samples, net, net.linear, device
         )
         preds_ood = preds_ood.detach().cpu()
     elif ood == "svhn":
-        ood_data = SVHNDataModule("data/", 16, 4)
+        ood_data = SVHNDataModule("data/", batch_size, 4)
         ood_data.prepare_data()
         ood_data.setup()
         preds_ood = generate_predictions_from_samples(
@@ -222,11 +248,14 @@ def run():
     else:
         raise NotImplementedError
 
-    with open("preds_ood_posthoc_25.pkl", "wb") as f:
-        pickle.dump(
-            {"means": preds_ood.mean(dim=0), "vars": preds_ood.var(dim=0)},
-            f,
-        )
+    wandb.log({"OOD prediction mean": preds_ood.mean(dim=0), "OOD prediction variance": preds_ood.var(dim=0)})
+    # with open("preds_ood_posthoc_25.pkl", "wb") as f:
+    #     pickle.dump(
+    #         {"means": preds_ood.mean(dim=0), "vars": preds_ood.var(dim=0)},
+    #         f,
+    #     )
+
+    wandb.finish()
 
 
 def generate_predictions_from_samples(

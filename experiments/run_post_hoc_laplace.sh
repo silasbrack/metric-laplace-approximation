@@ -10,4 +10,4 @@ module load python3/3.9.6
 module load cuda/11.3
 source venv/bin/activate
 
-python src/post_hoc_laplace_new.py
+python src/post_hoc_laplace.py

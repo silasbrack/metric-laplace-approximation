@@ -6,8 +6,8 @@ from laplace.curvature.asdl import _get_batch_grad
 
 
 class HessianCalculator:
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
     @abstractmethod
     def compute_batch(self, *args, **kwargs):
         pass
@@ -15,9 +15,9 @@ class HessianCalculator:
     def compute(self, loader, model, output_size):
         hessian = None
         for batch in loader:
-            
+
             batch = [item.to(self.device) for item in batch]
-            
+
             Hs = self.compute_batch(model, output_size, *batch)
             if hessian is None:
                 hessian = Hs
@@ -60,25 +60,31 @@ class ContrastiveHessianCalculator(HessianCalculator):
             # margin - torch.pow(torch.linalg.norm(f1 - f2, dim=1), 2) < 0
         )
         if self.hessian == "diag":
-            Hs = torch.einsum("nij,nij->nj", Jz1, Jz1) + \
-                 torch.einsum("nij,nij->nj", Jz2, Jz2) - \
-                 2 * (
-                         torch.einsum("nij,nij->nj", Jz1, Jz2) +
-                         torch.einsum("nij,nij->nj", Jz2, Jz1)
-                 )
+            Hs = (
+                torch.einsum("nij,nij->nj", Jz1, Jz1)
+                + torch.einsum("nij,nij->nj", Jz2, Jz2)
+                - 2
+                * (
+                    torch.einsum("nij,nij->nj", Jz1, Jz2)
+                    + torch.einsum("nij,nij->nj", Jz2, Jz1)
+                )
+            )
             mask = mask.view(-1, 1).expand(*Hs.shape)
         elif self.hessian == "full":
-            Hs = torch.einsum("nij,nkl->njl", Jz1, Jz1) + \
-                 torch.einsum("nij,nkl->njl", Jz2, Jz2) - \
-                 2 * (
-                         torch.einsum("nij,nkl->njl", Jz1, Jz2) +
-                         torch.einsum("nij,nkl->njl", Jz2, Jz1)
-                 )
+            Hs = (
+                torch.einsum("nij,nkl->njl", Jz1, Jz1)
+                + torch.einsum("nij,nkl->njl", Jz2, Jz2)
+                - 2
+                * (
+                    torch.einsum("nij,nkl->njl", Jz1, Jz2)
+                    + torch.einsum("nij,nkl->njl", Jz2, Jz1)
+                )
+            )
             mask = mask.view(-1, 1, 1).expand(*Hs.shape)
         else:
             raise NotImplementedError
 
-        Hs = Hs.masked_fill_(mask, 0.)
+        Hs = Hs.masked_fill_(mask, 0.0)
 
         return Hs.sum(dim=0)
 
@@ -87,7 +93,13 @@ class ContrastiveHessianCalculator(HessianCalculator):
 
         x1 = x[torch.cat((ap, an))]
         x2 = x[torch.cat((p, n))]
-        t = torch.cat((torch.ones(p.shape[0], device=x.device), torch.zeros(n.shape[0], device=x.device)))
+
+        t = torch.cat(
+            (
+                torch.ones(p.shape[0], device=x.device),
+                torch.zeros(n.shape[0], device=x.device),
+            )
+        )
 
         return self.compute_batch(model, embeddings.shape[-1], x1, x2, t)
 
@@ -111,6 +123,7 @@ def jacobians(x, model, output_size=784):
     jacobians = list()
     f = None
     for i in range(output_size):
+
         def loss_fn(outputs, targets):
             return outputs[:, i].sum()
 

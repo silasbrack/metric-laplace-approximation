@@ -92,3 +92,4 @@ target/
 # Logging
 logs/
 models/
+wandb/
