@@ -84,11 +84,11 @@ def run():
     # ood = "mnist"
     id_ = "cifar10"
     ood = "svhn"
-    epochs = 50
+    epochs = 20
     lr = 3e-4
     batch_size = 16
 
-    latent_dim = 25
+    latent_dim = 2
     if id_ == "fashionmnist":
         net = ConvDense(1, latent_dim).to(device)
         data = FashionMNISTDataModule("data/", batch_size, 4)
@@ -103,7 +103,6 @@ def run():
     # num_params = sum(p.numel() for p in net.parameters())
     # logging.info(f"Model has {num_params} parameters.")
 
-    
     wandb.init(
         project="metric-laplace-approximation",
         name="post-hoc-laplace",
@@ -143,8 +142,7 @@ def run():
             loss = contrastive_loss(output, y, hard_pairs)
             loss.backward()
             optim.step()
-            wandb.log({"Training loss": loss.item(),
-                       "Epoch": epoch})
+            wandb.log({"Training loss": loss.item(), "Epoch": epoch})
 
     accuracy = test_model(
         loader.dataset, data.test_dataloader().dataset, net, device
@@ -162,7 +160,7 @@ def run():
     h = []
     for x, y in tqdm(loader):
         x, y = x.to(device), y.to(device)
-        x_conv = net.conv(x).detach()
+        x_conv = net.conv(x)  # .detach()
         output = net.linear(x_conv)
         # output = net(x)
         hard_pairs = miner(y)
@@ -172,15 +170,17 @@ def run():
             * len(loader.dataset)
         )
         h.append(hessian)
-        # h.append(compute_hessian(net, output, x, y, hard_pairs))
-    h = torch.stack(h, dim=0).mean(dim=0).to(device)
-    h = torch.abs(h) + 1
+    h = torch.stack(h, dim=0).sum(dim=0).to(device)
+    if (h < 0).sum():
+        logging.warn("Found negative values in Hessian.")
+    h += 1
 
     mu_q = parameters_to_vector(net.linear.parameters())
     # mu_q = parameters_to_vector(net.parameters())
     sigma_q = 1 / (h + 1e-6)
 
     wandb.log({"Hessian": h})
+    wandb.log({"Covariance": sigma_q})
 
     def sample(parameters, posterior_scale, n_samples=16):
         n_params = len(parameters)
@@ -194,19 +194,35 @@ def run():
     device = "cpu"
     net = net.to(device)
     samples = samples.to(device)
-    
+
+    accuracies = get_sample_accuracy(
+        loader.dataset,
+        data.test_dataloader().dataset,
+        net,
+        net.linear,
+        samples,
+        device,
+    )
+    logging.info(f"Sample accuracies = {accuracies}")
+    # wandb.log({"Sample accuracies", accuracies})
+
     logging.info("Generating predictions from samples.")
     preds = generate_predictions_from_samples(
         data.test_dataloader(), samples, net, net.linear, device
     )
     preds = preds.detach().cpu()
 
-    wandb.log({"Prediction mean": preds.mean(dim=0), "Prediction variance": preds.var(dim=0)})
-    # with open("preds_posthoc_25.pkl", "wb") as f:
-    #     pickle.dump(
-    #         {"means": preds.mean(dim=0), "vars": preds.var(dim=0)},
-    #         f,
-    #     )
+    wandb.log(
+        {
+            "Prediction mean": preds.mean(dim=0),
+            "Prediction variance": preds.var(dim=0),
+        }
+    )
+    with open("preds.pkl", "wb") as f:
+        pickle.dump(
+            {"means": preds.mean(dim=0), "vars": preds.var(dim=0)},
+            f,
+        )
 
     logging.info("Generating ood predictions from samples.")
 
@@ -220,7 +236,9 @@ def run():
         )
         indices = torch.arange(len(test_set))[mask]
         ood_dataset = Subset(test_set, indices)
-        ood_dataloader = DataLoader(ood_dataset, batch_size=batch_size, num_workers=4)
+        ood_dataloader = DataLoader(
+            ood_dataset, batch_size=batch_size, num_workers=4
+        )
         preds_ood = generate_predictions_from_samples(
             ood_dataloader, samples, net, net.linear, device
         )
@@ -248,12 +266,17 @@ def run():
     else:
         raise NotImplementedError
 
-    wandb.log({"OOD prediction mean": preds_ood.mean(dim=0), "OOD prediction variance": preds_ood.var(dim=0)})
-    # with open("preds_ood_posthoc_25.pkl", "wb") as f:
-    #     pickle.dump(
-    #         {"means": preds_ood.mean(dim=0), "vars": preds_ood.var(dim=0)},
-    #         f,
-    #     )
+    wandb.log(
+        {
+            "OOD prediction mean": preds_ood.mean(dim=0),
+            "OOD prediction variance": preds_ood.var(dim=0),
+        }
+    )
+    with open("preds_ood.pkl", "wb") as f:
+        pickle.dump(
+            {"means": preds_ood.mean(dim=0), "vars": preds_ood.var(dim=0)},
+            f,
+        )
 
     wandb.finish()
 
@@ -292,6 +315,18 @@ def generate_fake_predictions_from_samples(
             sample_preds.append(pred)
         preds.append(torch.cat(sample_preds, dim=0))
     return torch.stack(preds, dim=0)
+
+
+def get_sample_accuracy(
+    train_set, test_set, model, inference_model, samples, device
+):
+    accuracies = []
+    for sample in samples:
+        vector_to_parameters(sample, inference_model.parameters())
+        accuracies.append(
+            test_model(train_set, test_set, model, device)["precision_at_1"]
+        )
+    return accuracies
 
 
 if __name__ == "__main__":

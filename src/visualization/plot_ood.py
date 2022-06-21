@@ -60,18 +60,18 @@ def run(preds_path, preds_ood_path, plot_path):
             lw=0.5,
         )
         axs[0].add_patch(elp)
-        elp = Ellipse(
-            (means_preds_ood[i, 0], means_preds_ood[i, 1]),
-            vars_preds_ood[i, 0],
-            vars_preds_ood[i, 1],
-            fc="None",
-            edgecolor="r",
-            lw=0.5,
-        )
-        axs[0].add_patch(elp)
+    # elp = Ellipse(
+    #     (means_preds_ood[i, 0], means_preds_ood[i, 1]),
+    #     vars_preds_ood[i, 0],
+    #     vars_preds_ood[i, 1],
+    #     fc="None",
+    #     edgecolor="r",
+    #     lw=0.5,
+    # )
+    # axs[0].add_patch(elp)
 
-    # handles, labels = axs[0].get_legend_handles_labels()
-    # fig.legend(handles, labels, loc='upper center')
+    handles, labels = axs[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center")
 
     axs[0].set(
         xlabel="Latent dim 1",
@@ -96,10 +96,20 @@ def run(preds_path, preds_ood_path, plot_path):
 
 
 if __name__ == "__main__":
+    # run(
+    #     "./preds_trained.pkl",
+    #     "./preds_ood_trained.pkl",
+    #     "./ood_plot_trained.png",
+    # )
+    # run(
+    #     "./results/preds_posthoc_svhn_2.pkl",
+    #     "./results/preds_ood_posthoc_svhn_2.pkl",
+    #     "./test.png",
+    # )
     run(
-        "./preds_trained.pkl",
-        "./preds_ood_trained.pkl",
-        "./ood_plot_trained.png",
+        "./preds.pkl",
+        "./preds_ood.pkl",
+        "./test.png",
     )
     # run(
     #     "./results/ensemble/preds_ensemble_mnist_2.pkl",
